@@ -1,5 +1,5 @@
 import React, { ReactElement, useEffect, useState } from "react";
-import {Controls, Operation} from "./Controls";
+import {Controls, Operation ,defaultOperation} from "./Controls";
 import {loadImage, Image} from "./loadImage";
 import { useViewportSize } from "./useViewportSize";
 
@@ -7,25 +7,17 @@ export function App(): ReactElement {
   const [viewportWidth, viewportHeight] = useViewportSize();
   const [image, setImage] = useState<Image | null>(null);
   const [scale, setScale] = useState(1);
-
-  const [operation, setOperation] = useState<Operation>({
-    mode: "shrink",
-    horizontal: 0,
-    vertical: 0
-  });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [operation, setOperation] = useState<Operation>(defaultOperation);
 
   useEffect(() => {
-    loadImage("the-persistence-of-memory.jpg").then(image => {
-      setImage(image);
-    });
+    loadImage("the-persistence-of-memory.jpg")
+      .then(setImage)
+      .catch(err => setErrorMessage(err.message || "Oops!"));
   }, []);
 
   useEffect(() => {
-    setOperation({
-      mode: "shrink",
-      horizontal: 0,
-      vertical: 0
-    });
+    setOperation(defaultOperation);
     fitToViewport();
   }, [image]);
 
@@ -55,7 +47,7 @@ export function App(): ReactElement {
       return;
     }
 
-    const scale = Math.min(viewportWidth / image.width, viewportHeight / image.height);
+    const scale = 0.9*Math.min(viewportWidth / image.width, viewportHeight / image.height);
     setScale(Math.max(0.05, Math.min(2, scale)));
   }
 
@@ -64,17 +56,19 @@ export function App(): ReactElement {
       {canvas}
       <div style={{position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16}}>
         <Controls
-          loading={false}
-          errorMessage={null}
+          loading={image === null}
+          errorMessage={errorMessage}
           scale={scale}
           operation={operation}
-          imageSize={image === null ? [1, 1] : [image.width, image.height]}
+          seamCarveRanges={image === null ? [[0, 0], [0, 0]] : [[-image.width + 1, image.width], [-image.height + 1, image.height]]}
           onUpload={file => {
-            loadImage(URL.createObjectURL(file)).then(setImage).catch(alert);
+            loadImage(URL.createObjectURL(file))
+              .then(setImage)
+              .catch(err => setErrorMessage(err.message || "Oops!"));
           }}
-          setScale={setScale}
-          fitToViewport={fitToViewport}
-          setOperation={setOperation} />
+          onScaleChange={setScale}
+          onFitToViewport={fitToViewport}
+          onOperationChange={setOperation} />
       </div>
     </div>
   );

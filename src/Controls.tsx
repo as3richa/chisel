@@ -1,38 +1,45 @@
 import React, { ReactElement } from "react";
 
-export type Operation =
-  { mode: "shrink", horizontal: number, vertical: number } |
-  { mode: "enlarge", horizontal: number, vertical: number } |
-  { mode: "detect-edges" };
-
-export type ControlProps = {
+export type ControlsProps = {
   loading: boolean,
   errorMessage: string | null,
   scale: number,
   operation: Operation,
-  imageSize: [number, number],
+  seamCarveRanges: [[number, number], [number, number]],
   onUpload: (file: File) => void,
-  setScale: (scale: number) => void,
-  fitToViewport: () => void,
-  setOperation: (op: Operation) => void
+  onScaleChange: (scale: number) => void,
+  onFitToViewport: () => void,
+  onOperationChange: (op: Operation) => void
+};
+
+export type Operation =
+  { mode: "seam-carve", size: [number, number], highlight: boolean } |
+  { mode: "edge-detect" };
+
+export const defaultOperation: Operation = {
+  mode: "seam-carve",
+  size: [0, 0],
+  highlight: false,
 };
 
 type LabeledNumericInputProps = {
   label: string,
   value: number,
-  min: number,
-  max: number,
-  onChange: (value: number) => void,
+  range: [number, number],
+  def: number
   units: string,
-  disabled: boolean
+  disabled: boolean,
+  onChange: (value: number) => void,
 }
 
 function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
-  const {label, value, min, max, onChange, units, disabled} = props;
+  const {label, value, range: [min, max], def, units, disabled, onChange} = props;
   
   function handleEvent(event: React.ChangeEvent<HTMLInputElement>) {
     let value = parseInt(event.target.value);
-    if (isNaN(value) || value < min) {
+    if (isNaN(value)) {
+      value = def;
+    } else if (value < min) {
       value = min;
     } else if (value > max) {
       value = max;
@@ -66,20 +73,24 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
   );
 }
 
-export function Controls(props: ControlProps): ReactElement {
+export function Controls(props: ControlsProps): ReactElement {
   const {
     loading,
     errorMessage,
     scale,
     operation,
-    imageSize,
+    seamCarveRanges: [hSeamCarveRange, vSeamCarveRange],
     onUpload,
-    setScale,
-    fitToViewport,
-    setOperation
+    onScaleChange: setScale,
+    onFitToViewport: fitToViewport,
+    onOperationChange: setOperation
   } = props;
 
-  const upload = (
+  const errorBanner = errorMessage && (
+    <div style={{marginBottom: 12, color: "#f00"}}>{errorMessage}</div>
+  );
+
+  const uploadInput = (
     <label style={{
       display: "block",
       cursor: "pointer",
@@ -107,14 +118,15 @@ export function Controls(props: ControlProps): ReactElement {
       <LabeledNumericInput
         label="Scale"
         value={Math.round(100*scale)}
-        min={5}
-        max={200}
+        range={[5, 200]}
+        def={100}
         onChange={value => setScale(value / 100)}
         units="%"
         disabled={loading || errorMessage !== null}
       />
       <button
         style={{fontSize: 12, width: "100%"}}
+        disabled={loading || errorMessage !== null}
         onClick={fitToViewport}
       >Fit to viewport</button>
     </div>
@@ -126,6 +138,7 @@ export function Controls(props: ControlProps): ReactElement {
       <select
         style={{width: "100%", fontSize: 12, display: "block", marginBottom: 12}}
         value={operation.mode}
+        disabled={loading || errorMessage !== null}
         onChange={event => {
           const mode = event.target.value;
 
@@ -133,59 +146,69 @@ export function Controls(props: ControlProps): ReactElement {
             return;
           }
           
-          if (mode === "shrink" || mode === "enlarge") {
-            setOperation({mode, horizontal: 0, vertical: 0});
+          if (mode === "seam-carve") {
+            setOperation(defaultOperation);
           } else {
-            setOperation({mode: "detect-edges"});
+            setOperation({mode: "edge-detect"});
           }
         }}>
-        <option value="shrink">
-          Shrink image
+        <option value="seam-carve">
+          Shrink/enlarge image
         </option>
-        <option value="enlarge">
-          Enlarge image
-        </option>
-        <option value="detect-edges">
+        <option value="edge-detect">
           Detect edges
         </option>
       </select>
     </div>
   );
 
-  const operationControls = (operation.mode === "detect-edges")
-    ? null
-    : (
+  const operationControls = (operation.mode === "edge-detect") ? null :
+    (
       <div>
         <LabeledNumericInput
           label="Horizontal"
-          value={operation.horizontal}
-          min={0}
-          max={imageSize[0] - 1}
+          value={operation.size[0]}
+          range={hSeamCarveRange}
+          def={0}
+          units ="pixels"
+          disabled={loading || errorMessage !== null}
           onChange={value => {
             setOperation({
               mode: operation.mode,
-              horizontal: value,
-              vertical: operation.vertical
+              size: [value, operation.size[1]],
+              highlight: operation.highlight,
             });
           }}
-          units ="pixels"
-          disabled={loading || errorMessage !== null}
         />
         <LabeledNumericInput
           label="Vertical"
-          value={operation.vertical}
-          min={0}
-          max={imageSize[1] - 1}
+          value={operation.size[1]}
+          range={vSeamCarveRange}
+          def={0}
+          units ="pixels"
+          disabled={loading || errorMessage !== null}
           onChange={value => {
             setOperation({
               mode: operation.mode,
-              horizontal: operation.horizontal,
-              vertical: value
+              size: [operation.size[0], value],
+              highlight: operation.highlight,
             });
           }}
-          units ="pixels"
-          disabled={loading || errorMessage !== null}
         />
+        <label>
+          <input type="checkbox"
+            disabled={loading || errorMessage !== null}
+            checked={operation.highlight} style={{verticalAlign: "middle"}}
+            onChange={event => {
+              setOperation({
+                mode: operation.mode,
+                size: operation.size,
+                highlight: event.target.checked,
+              });
+            }}
+          />
+          {" "}Highlight seams
+        </label>
       </div>
     );
 
@@ -200,7 +223,8 @@ export function Controls(props: ControlProps): ReactElement {
         width: 200,
         fontSize: 12
       }}>
-      {upload}
+      {errorBanner}
+      {uploadInput}
       {scaleControls}
       {modeSelect}
       {operationControls}
