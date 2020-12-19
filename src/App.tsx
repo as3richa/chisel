@@ -21,6 +21,11 @@ export function App(): ReactElement {
   }, []);
 
   useEffect(() => {
+    setOperation({
+      mode: "shrink",
+      horizontal: 0,
+      vertical: 0
+    });
     fitToViewport();
   }, [image]);
 
@@ -29,6 +34,7 @@ export function App(): ReactElement {
   if (image !== null) {
     const scaledWidth = Math.round(scale * image.width);
     const scaledHeight = Math.round(scale * image.height);
+
     canvas = (
       <canvas
         width={image.width}
@@ -48,7 +54,9 @@ export function App(): ReactElement {
     if (image === null) {
       return;
     }
-    setScale(0.9 * Math.min(viewportWidth / image.width, viewportHeight / image.height));
+
+    const scale = Math.min(viewportWidth / image.width, viewportHeight / image.height);
+    setScale(Math.max(0.05, Math.min(2, scale)));
   }
 
   return (
@@ -61,7 +69,9 @@ export function App(): ReactElement {
           scale={scale}
           operation={operation}
           imageSize={image === null ? [1, 1] : [image.width, image.height]}
-          onUpload={() => alert("upload")}
+          onUpload={file => {
+            loadImage(URL.createObjectURL(file)).then(setImage).catch(alert);
+          }}
           setScale={setScale}
           fitToViewport={fitToViewport}
           setOperation={setOperation} />
