@@ -3,7 +3,8 @@ import {Controls, Operation ,defaultOperation} from "./Controls";
 import {loadImageData} from "./loadImageData";
 import {useViewportSize} from "./useViewportSize";
 import {ImageDataCanvas} from "./ImageDataCanvas";
-import { detectEdges, intensityToImageData} from "./detectEdges";
+import {detectEdges, edgesToImageData} from "./detectEdges";
+import { carveSeams } from "./carveSeam";
 
 export function App(): ReactElement {
   const [imageData, setImageData] = useState<ImageData | null>(null);
@@ -46,9 +47,17 @@ export function App(): ReactElement {
   }, [transformedImageData, justLoaded]);
 
   useEffect(() => {
-    
-    if(imageData !== null) {
-      setTransformedImageData(intensityToImageData(detectEdges(imageData), imageData.width, imageData.height));
+    if(imageData === null) {
+      return;
+    }
+
+    const edges = detectEdges(imageData);
+
+    if (operation.mode === "edge-detect") {
+      const data = edgesToImageData(edges, imageData.width, imageData.height);
+      setTransformedImageData(data);
+    } else {
+      setTransformedImageData(carveSeams(imageData, edges, operation.size[0], operation.size[1]));
     }
   }, [imageData, operation]);
 

@@ -1,79 +1,80 @@
-export function detectEdges(data: ImageData): Float32Array {
-  const {width: w, height: h} = data;
-  function dataIndex(y: number, x: number) {
-    return 4 * (y * w + x);
+export function detectEdges(data: ImageData): Uint16Array {
+  const {data: bytes, width, height} = data;
+
+  const energy = new Uint8ClampedArray((width + 2) * (height + 2));
+
+  function energyIndex(y: number, x: number) {
+    return y * (width + 2) + x;
   }
 
-  const intensity = new Float32Array((w + 2) * (h + 2));
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x ++) {
+      const i = 4 * (y * width + x);
+      const [r, g, b] = [bytes[i], bytes[i+1], bytes[i+2]];
 
-  function intensityIndex(y: number, x: number) {
-    return y * (w + 2) + x;
-  }
-
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x ++) {
-      const i = dataIndex(y, x);
-      const [r, g, b] = [data.data[i], data.data[i+1], data.data[i+2]];
-      const value = (0.3 * r + 0.59 * g + 0.11 * b)/255;
-      intensity[intensityIndex(y + 1, x + 1)] = value;
+      const value = Math.round(0.3 * r + 0.59 * g + 0.11 * b);
+      energy[energyIndex(y + 1, x + 1)] = value;
     }
   }
 
-  for (let y = 1; y <= h; y ++) {
-    intensity[intensityIndex(y, 0)] = intensity[intensityIndex(y, 1)];
-    intensity[intensityIndex(y, w + 1)] = intensity[intensityIndex(y, w)];
+  for (let y = 1; y <= height; y ++) {
+    energy[energyIndex(y, 0)] = energy[energyIndex(y, 1)];
+    energy[energyIndex(y, width + 1)] = energy[energyIndex(y, width)];
   }
 
-  for (let x = 1; x <= w; x ++) {
-    intensity[intensityIndex(0, x)] = intensity[intensityIndex(1, x)];
-    intensity[intensityIndex(h + 1, x)] = intensity[intensityIndex(h, x)];
+  for (let x = 1; x <= width; x ++) {
+    energy[energyIndex(0, x)] = energy[energyIndex(1, x)];
+    energy[energyIndex(height + 1, x)] = energy[energyIndex(height, x)];
   }
 
-  intensity[intensityIndex(0, 0)] = intensity[intensityIndex(1, 1)];
-  intensity[intensityIndex(0, w + 1)] = intensity[intensityIndex(1, w)];
-  intensity[intensityIndex(h + 1, 0)] = intensity[intensityIndex(h, 1)];
-  intensity[intensityIndex(h + 1, w + 1)] = intensity[intensityIndex(h, w)];
+  energy[energyIndex(0, 0)] = energy[energyIndex(1, 1)];
+  energy[energyIndex(0, width + 1)] = energy[energyIndex(1, width)];
+  energy[energyIndex(height + 1, 0)] = energy[energyIndex(height, 1)];
+  energy[energyIndex(height + 1, width + 1)] = energy[energyIndex(height, width)];
 
-  const edges = new Float32Array(w * h);
+  const edges = new Uint16Array(width * height);
 
-  let min = intensity[0], max = intensity[0];
+  let min = energy[0], max = energy[0];
 
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = intensityIndex(y, x);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = energyIndex(y, x);
 
       const [[a, b, c], [d, e], [f, g, h]] = [
-        [intensity[i], intensity[i + 1], intensity[i + 2]],
-        [intensity[i + w + 2], intensity[i + w + 4]],
-        [intensity[i + 2*w + 4], intensity[i + 2*w + 5], intensity[i + 2*w + 6]],
+        [energy[i], energy[i + 1], energy[i + 2]],
+        [energy[i + width + 2], energy[i + width + 4]],
+        [energy[i + 2*width + 4], energy[i + 2*width + 5], energy[i + 2*width + 6]],
       ];
 
-      const gx = -a + c - 2*d + 2*e - f + h;
-      const gy = -a - 2*b - c + f + 2*g + h;
-      const value = Math.sqrt(gx*gx + gy*gy);
-
-      edges[y * w + x] = value;
+      const value = sobel(a, b, c, d, e, f, g, h);
+      edges[y * width + x] = value;
       min = Math.min(min, value);
       max = Math.max(max, value);
     }
   }
 
-  const range = max - min <= 1e-4 ? 1 : (max - min);
+  const range = max - min == 0 ? 1 : (max - min);
 
-  for (let i = 0; i < w * h; i ++) {
-    edges[i] = (edges[i] - min) / range;
+  for (let i = 0; i < width * height; i ++) {
+    edges[i] = Math.round((edges[i] - min) / range * 65535);
   }
 
   return edges;
 }
 
-export function intensityToImageData(intensity: Float32Array, width: number, height: number): ImageData {
-  const data = new Uint8ClampedArray(4 * width * height);
+export function sobel(a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number): number {
+  const gx = -a + c - 2*d + 2*e - f + h;
+  const gy = -a - 2*b - c + f + 2*g + h;
+  return Math.round(Math.sqrt(gx*gx + gy*gy));
+}
+
+export function edgesToImageData(edges: Uint16Array, width: number, height: number): ImageData {
+  const bytes = new Uint8ClampedArray(4 * width * height);
 
   for (let i = 0; i < width * height; i++) {
-    data[4 * i] = data[4 * i + 1] = data[4 * i + 2] = Math.round(255 * intensity[i]);
-    data[4 * i + 3] = 255;
+    bytes[4 * i] = bytes[4 * i + 1] = bytes[4 * i + 2] = Math.round(edges[i] / 255);
+    bytes[4 * i + 3] = 255;
   }
 
-  return new ImageData(data, width, height);
+  return new ImageData(bytes, width, height);
 }

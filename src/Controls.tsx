@@ -13,13 +13,12 @@ export type ControlsProps = {
 };
 
 export type Operation =
-  { mode: "seam-carve", size: [number, number], highlight: boolean } |
+  { mode: "seam-carve", size: [number, number] } |
   { mode: "edge-detect" };
 
 export const defaultOperation: Operation = {
   mode: "seam-carve",
   size: [0, 0],
-  highlight: false,
 };
 
 type LabeledNumericInputProps = {
@@ -176,7 +175,6 @@ export function Controls(props: ControlsProps): ReactElement {
             setOperation({
               mode: operation.mode,
               size: [value, operation.size[1]],
-              highlight: operation.highlight,
             });
           }}
         />
@@ -191,24 +189,9 @@ export function Controls(props: ControlsProps): ReactElement {
             setOperation({
               mode: operation.mode,
               size: [operation.size[0], value],
-              highlight: operation.highlight,
             });
           }}
         />
-        <label>
-          <input type="checkbox"
-            disabled={loading || errorMessage !== null}
-            checked={operation.highlight} style={{verticalAlign: "middle"}}
-            onChange={event => {
-              setOperation({
-                mode: operation.mode,
-                size: operation.size,
-                highlight: event.target.checked,
-              });
-            }}
-          />
-          {" "}Highlight seams
-        </label>
       </div>
     );
 
