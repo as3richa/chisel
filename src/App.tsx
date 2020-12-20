@@ -3,6 +3,7 @@ import {Controls, Operation ,defaultOperation} from "./Controls";
 import {loadImageData} from "./loadImageData";
 import {useViewportSize} from "./useViewportSize";
 import {ImageDataCanvas} from "./ImageDataCanvas";
+import { detectEdges, intensityToImageData} from "./detectEdges";
 
 export function App(): ReactElement {
   const [imageData, setImageData] = useState<ImageData | null>(null);
@@ -45,7 +46,10 @@ export function App(): ReactElement {
   }, [transformedImageData, justLoaded]);
 
   useEffect(() => {
-    setTransformedImageData(imageData);
+    
+    if(imageData !== null) {
+      setTransformedImageData(intensityToImageData(detectEdges(imageData), imageData.width, imageData.height));
+    }
   }, [imageData, operation]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
