@@ -5,6 +5,13 @@ import {useViewportSize} from "./useViewportSize";
 import {ImageDataCanvas} from "./ImageDataCanvas";
 import {detectEdges, edgesToImageData} from "./detectEdges";
 import { carveSeams } from "./carveSeam";
+import type {EnergyMap} from "./gouge/pkg";
+
+type Gouge = {
+  rgba_to_energy: (rgba: Uint8Array, width: number, height: number) => EnergyMap,
+  energy_to_rgba: (energy: EnergyMap) => Uint8Array,
+  detect_edges: (energy: EnergyMap) => EnergyMap,
+};
 
 export function App(): ReactElement {
   const [imageData, setImageData] = useState<ImageData | null>(null);
@@ -13,8 +20,15 @@ export function App(): ReactElement {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [operation, setOperation] = useState<Operation>(defaultOperation);
   const [justLoaded, setJustLoaded] = useState<boolean>(false);
+  const [gouge, setGouge] = useState<Gouge | null>(null);
 
   const viewportSize = useViewportSize();
+
+  useEffect(() => { 
+    import("./gouge/pkg")
+      .then(setGouge)
+      .catch(alert);
+  }, []);
 
   function loadImage(src: string) {
     loadImageData(src)
@@ -47,19 +61,18 @@ export function App(): ReactElement {
   }, [transformedImageData, justLoaded]);
 
   useEffect(() => {
-    if(imageData === null) {
+    if(imageData === null || gouge === null) {
       return;
     }
 
-    const edges = detectEdges(imageData);
+    const energy = gouge.rgba_to_energy(new Uint8Array(imageData.data.buffer), imageData.width, imageData.height);
+    const edges = gouge.detect_edges(energy);
+    const rgba = gouge.energy_to_rgba(edges);
 
-    if (operation.mode === "edge-detect") {
-      const data = edgesToImageData(edges, imageData.width, imageData.height);
-      setTransformedImageData(data);
-    } else {
-      setTransformedImageData(carveSeams(imageData, edges, operation.size[0], operation.size[1]));
-    }
-  }, [imageData, operation]);
+    console.log(rgba);
+
+    setTransformedImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), imageData.width, imageData.height));
+  }, [imageData, operation, gouge]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
     if (transformedImageData === null) {

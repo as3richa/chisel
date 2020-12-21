@@ -1,8 +1,9 @@
-import { resolve } from "path";
+const path = require("path");
+const WasmPackPlugin = require("@wasm-tool/wasm-pack-plugin");
 
 const wasmExtensionRegExp = /\.wasm$/;
 
-export default function override(config) {
+module.exports = function override(config) {
   config.resolve.extensions.push(".wasm");
 
   config.module.rules.forEach(rule => {
@@ -17,14 +18,13 @@ export default function override(config) {
     });
   });
 
-  config.module.rules.push({
-    test: wasmExtensionRegExp,
-    include: resolve(__dirname, "src"),
-    use: [{
-      loader: require.resolve("wasm-loader"),
-      options: {}
-    }]
-  });
+  if (!config.plugins) {
+    config.plugins = [];
+  }
+
+  config.plugins.push(new WasmPackPlugin({
+    crateDirectory: path.resolve(__dirname, "src/gouge"),
+  }));
 
   return config;
 }

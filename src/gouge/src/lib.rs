@@ -59,11 +59,19 @@ impl EnergyMap {
 }
 
 #[wasm_bindgen]
+extern "C" {
+    fn alert(message: &str);
+}
+
+#[wasm_bindgen]
 pub fn rgba_to_energy(rgba: &[u8], width: u32, height: u32) -> EnergyMap {
     let size = (width as usize) * (height as usize);
     assert!(rgba.len() == 4 * size);
 
-    let mut energy = vec![0f32; rgba.len()];
+    let s = rgba.len().to_string();
+    alert(&s);
+
+    let mut energy = vec![0f32; size];
 
     for (i, e) in energy.iter_mut().enumerate() {
         let (r, g, b) = unsafe {
@@ -92,6 +100,7 @@ pub fn energy_to_rgba(energy: &EnergyMap) -> Vec<u8> {
             (*value, *value)
         };
 
+
         energy.energy.iter().fold(init, { |(min, max), &value|
             (f32::min(min, value), f32::max(max, value))
         })
@@ -103,7 +112,7 @@ pub fn energy_to_rgba(energy: &EnergyMap) -> Vec<u8> {
         max - min
     };
 
-    let mut rgba = vec![0u8; energy.len()];
+    let mut rgba = vec![0u8; 4 * energy.len()];
 
     for (i, &e) in energy.energy.iter().enumerate() {
         let j = 4 * i;
