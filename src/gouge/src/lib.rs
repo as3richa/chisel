@@ -1,4 +1,5 @@
 extern crate wasm_bindgen;
+extern crate web_sys;
 
 use wasm_bindgen::prelude::*;
 
@@ -38,40 +39,17 @@ impl<T: Default + Copy> Map<T> {
     fn height(&self) -> usize {
         self.height as usize
     }
-
-    fn map<U: Default + Copy, F: Fn(T) -> U>(&self, f: F) -> Map<U> {
-        Map::from_vec(
-            self.energy.iter().map(|x| f(*x)).collect(),
-            self.width,
-            self.height,
-        )
-    }
-
-    unsafe fn get_row_unchecked(&self, y: usize) -> &[T] {
-        let w = self.width();
-        self.energy.get_unchecked(w * y..w * (y + 1))
-    }
-
-    unsafe fn get_unchecked(&self, x: usize, y: usize) -> &T {
-        let i = self.width() * y + x;
-        self.energy.get_unchecked(i)
-    }
-
-    unsafe fn get_unchecked_mut(&mut self, x: usize, y: usize) -> &mut T {
-        let i = self.width() * y + x;
-        self.energy.get_unchecked_mut(i)
-    }
 }
 
 #[wasm_bindgen]
-pub struct EnergyMap(Map<u8>);
+pub struct EnergyMap(Map<f32>);
 
 #[wasm_bindgen]
 pub fn rgba_to_energy(rgba: Vec<u8>, width: u32, height: u32) -> EnergyMap {
     let size = (width as usize) * (height as usize);
     assert!(rgba.len() == 4 * size);
 
-    let mut energy = vec![0u8; size];
+    let mut energy = vec![0f32; size];
 
     for (i, e) in energy.iter_mut().enumerate() {
         let (r, g, b) = unsafe {
@@ -82,8 +60,7 @@ pub fn rgba_to_energy(rgba: Vec<u8>, width: u32, height: u32) -> EnergyMap {
                 *rgba.get_unchecked(j + 2),
             )
         };
-        let fp_value = 0.3 * (r as f32) + 0.59 * (g as f32) + 0.11 * (b as f32);
-        *e = f32::min(fp_value.round(), 255.0) as u8;
+        *e = 0.3 * (r as f32) + 0.59 * (g as f32) + 0.11 * (b as f32);
     }
 
     EnergyMap(Map::from_vec(energy, width, height))
@@ -97,27 +74,20 @@ pub fn energy_to_rgba(energy_map: &EnergyMap) -> Vec<u8> {
         return vec![];
     }
 
-    let (min, max) = {
-        let init = unsafe {
-            let value = *energy.get_unchecked(0, 0);
-            (value, value)
-        };
+    let (min, max) = energy
+        .energy
+        .iter()
+        .fold((f32::INFINITY, -f32::INFINITY), |(min, max), &value| {
+            (f32::min(min, value), f32::max(max, value))
+        });
 
-        energy.energy.iter().fold(init, {
-            |(min, max), &value| (std::cmp::min(min, value), std::cmp::max(max, value))
-        })
-    };
-
-    let range = if max == min { 1 } else { max - min };
+    let range = if max - min <= 1e-4 { 1.0 } else { max - min };
 
     let mut rgba = vec![0u8; 4 * energy.len()];
 
     for (i, &e) in energy.energy.iter().enumerate() {
+        let byte = (255.0 * f32::min((e - min) / range, 1.0)).round() as u8;
         let j = 4 * i;
-
-        let unit_energy = ((e - min) as f32) / (range as f32);
-        let byte = (255.0 * unit_energy).round() as u8;
-
         unsafe {
             *rgba.get_unchecked_mut(j) = byte;
             *rgba.get_unchecked_mut(j + 1) = byte;
@@ -135,12 +105,6 @@ fn sobel_f32(a: f32, b: f32, c: f32, d: f32, e: f32, f: f32, g: f32, h: f32) -> 
     (x * x + y * y).sqrt()
 }
 
-fn sobel_u8(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8, h: u8) -> f32 {
-    sobel_f32(
-        a as f32, b as f32, c as f32, d as f32, e as f32, f as f32, g as f32, h as f32,
-    )
-}
-
 #[wasm_bindgen]
 pub fn detect_edges(energy_map: &EnergyMap) -> EnergyMap {
     let EnergyMap(energy) = energy_map;
@@ -153,127 +117,144 @@ pub fn detect_edges(energy_map: &EnergyMap) -> EnergyMap {
         return EnergyMap(Map::new(1, 1));
     }
 
-    let edges_f32 = if energy.width() == 1 || energy.height() == 1 {
-        detect_edges_1xn(energy)
-    } else {
-        detect_edges_2x2(energy)
-    };
+    if energy.width() == 1 || energy.height() == 1 {
+        return EnergyMap(detect_edges_1xn(energy));
+    }
 
-    let (min, max) = edges_f32
-        .energy
-        .iter()
-        .fold((f32::INFINITY, -f32::INFINITY), |(min, max), &value| {
-            (f32::min(min, value), f32::max(max, value))
-        });
-
-    let range = if max - min <= 1e-4 { 1.0 } else { max - min };
-
-    let f = { |x| f32::min(255.0 * ((x - min) as f32) / (range as f32), 255.0) as u8 };
-
-    EnergyMap(edges_f32.map(f))
+    EnergyMap(detect_edges_2x2(energy))
 }
 
-fn detect_edges_1xn(energy: &Map<u8>) -> Map<f32> {
+fn detect_edges_1xn(energy: &Map<f32>) -> Map<f32> {
     debug_assert!((energy.width() == 1) ^ (energy.height() == 1));
 
     let len = std::cmp::max(energy.width(), energy.height());
     debug_assert!(len >= 2);
 
-    let mut edges_f32 = Map::new(energy.width, energy.height);
-    let vec = &mut edges_f32.energy;
+    let mut edges = Map::new(energy.width, energy.height);
+
+    macro_rules! edges_at {
+        ($i: expr) => {
+            edges.energy.get_unchecked_mut($i)
+        };
+    }
+
+    macro_rules! energy_at {
+        ($i: expr) => {
+            *energy.energy.get_unchecked($i);
+        };
+    }
 
     unsafe {
         // * * *
         // * a *
         // * b *
-        *vec.get_unchecked_mut(0) = {
-            let a = *energy.energy.get_unchecked(0);
-            let b = *energy.energy.get_unchecked(1);
-            sobel_u8(a, a, a, a, a, b, b, b)
+        *edges_at!(0) = {
+            let a = energy_at!(0);
+            let b = energy_at!(0);
+            sobel_f32(a, a, a, a, a, b, b, b)
         };
 
         // * b *
         // * a *
         // * * *
-        *vec.get_unchecked_mut(len - 1) = {
-            let a = *energy.get_unchecked(0, len - 1);
-            let b = *energy.get_unchecked(0, len - 2);
-            sobel_u8(b, b, b, a, a, a, a, a)
+        *edges_at!(len - 1) = {
+            let a = energy_at!(len - 1);
+            let b = energy_at!(len - 2);
+            sobel_f32(b, b, b, a, a, a, a, a)
         };
 
         // * a *
         // * b *
         // * c *
         for y in 1..len - 1 {
-            *vec.get_unchecked_mut(y) = {
-                let a = *energy.get_unchecked(0, y - 1);
-                let b = *energy.get_unchecked(0, y);
-                let c = *energy.get_unchecked(0, y + 1);
-                sobel_u8(a, a, a, b, b, c, c, c)
+            *edges_at!(y) = {
+                let a = energy_at!(y - 1);
+                let b = energy_at!(y);
+                let c = energy_at!(y + 1);
+                sobel_f32(a, a, a, b, b, c, c, c)
             }
         }
     }
 
-    edges_f32
+    edges
 }
 
-fn detect_edges_2x2(energy: &Map<u8>) -> Map<f32> {
+fn detect_edges_2x2(energy: &Map<f32>) -> Map<f32> {
     debug_assert!(energy.width >= 2 && energy.height() >= 2);
 
     let mut edges = Map::new(energy.width, energy.height);
 
-    for y in 0..energy.height() {
-        unsafe {
-            let row = energy.get_row_unchecked(y);
+    macro_rules! edges_at {
+        ($x: expr, $y: expr) => {
+            edges.energy.get_unchecked_mut($y * energy.width() + $x)
+        };
+    }
 
-            let prev_row = if y == 0 {
-                row
-            } else {
-                energy.get_row_unchecked(y - 1)
-            };
+    macro_rules! energy_at {
+        ($x: expr, $y: expr) => {
+            *energy.energy.get_unchecked($y * energy.width() + $x)
+        };
+    }
 
-            let next_row = if y == energy.height() - 1 {
-                row
-            } else {
-                energy.get_row_unchecked(y + 1)
-            };
+    macro_rules! sobel {
+        ($x1: expr, $x2: expr, $x3: expr, $y1: expr, $y2: expr, $y3: expr) => {
+            sobel_f32(
+                energy_at!($x1, $y1),
+                energy_at!($x2, $y1),
+                energy_at!($x3, $y1),
+                energy_at!($x1, $y2),
+                energy_at!($x3, $y2),
+                energy_at!($x1, $y3),
+                energy_at!($x2, $y3),
+                energy_at!($x3, $y3),
+            )
+        };
+    }
 
-            *edges.get_unchecked_mut(0, y) = sobel_u8(
-                *prev_row.get_unchecked(0),
-                *prev_row.get_unchecked(0),
-                *prev_row.get_unchecked(1),
-                *row.get_unchecked(0),
-                *row.get_unchecked(1),
-                *next_row.get_unchecked(0),
-                *next_row.get_unchecked(0),
-                *next_row.get_unchecked(1),
-            );
+    unsafe {
+        let right = energy.width() - 1;
+        let bottom = energy.height() - 1;
 
-            *edges.get_unchecked_mut(energy.width() - 1, y) = sobel_u8(
-                *prev_row.get_unchecked(energy.width() - 2),
-                *prev_row.get_unchecked(energy.width() - 1),
-                *prev_row.get_unchecked(energy.width() - 1),
-                *row.get_unchecked(energy.width() - 2),
-                *row.get_unchecked(energy.width() - 1),
-                *next_row.get_unchecked(energy.width() - 2),
-                *next_row.get_unchecked(energy.width() - 1),
-                *next_row.get_unchecked(energy.width() - 1),
-            );
+        *edges_at!(0, 0) = sobel!(0, 0, 1, 0, 0, 1);
+
+        for x in 1..right {
+            *edges_at!(x, 0) = sobel!(x - 1, x, x + 1, 0, 0, 1);
+        }
+
+        *edges_at!(right, 0) = sobel!(right - 1, right, right, 0, 0, 1);
+
+        for y in 1..bottom {
+            *edges_at!(0, y) = sobel!(0, 0, 1, y - 1, y, y + 1);
+
+            let mut a = energy_at!(0, y - 1);
+            let mut b = energy_at!(1, y - 1);
+            let mut c = energy_at!(2, y - 1);
+            let mut d = energy_at!(0, y);
+            let mut k = energy_at!(1, y);
+            let mut e = energy_at!(2, y);
+            let mut f = energy_at!(0, y + 1);
+            let mut g = energy_at!(1, y + 1);
+            let mut h = energy_at!(2, y + 1);
+                        
 
             for x in 1..energy.width() - 1 {
-                *edges.get_unchecked_mut(x, y) = sobel_u8(
-                    *prev_row.get_unchecked(x - 1),
-                    *prev_row.get_unchecked(x),
-                    *prev_row.get_unchecked(x + 1),
-                    *row.get_unchecked(x - 1),
-                    *row.get_unchecked(x + 1),
-                    *next_row.get_unchecked(x - 1),
-                    *next_row.get_unchecked(x),
-                    *next_row.get_unchecked(x + 1),
-                )
+                *edges_at!(x, y) = sobel_f32(a, b, c, d, e, f, g, h);
+                a = b;
+                b = c;
+                c = energy_at!(x )
             }
+
+            *edges_at!(right, y) = sobel!(right - 1, right, right, y - 1, y, y + 1);
         }
-    }
+
+        *edges_at!(0, bottom) = sobel!(0, 0, 1, bottom - 1, bottom, bottom);
+
+        for x in 1..right {
+            *edges_at!(x, bottom) = sobel!(x - 1, x, x + 1, bottom - 1, bottom, bottom);
+        }
+
+        *edges_at!(right, bottom) = sobel!(right - 1, right, right, bottom - 1, bottom, bottom);
+    };
 
     edges
 }
