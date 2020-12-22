@@ -65,11 +65,12 @@ export function App(): ReactElement {
       return;
     }
 
+    console.log(performance.now());
     const energy = gouge.rgba_to_energy(new Uint8Array(imageData.data.buffer), imageData.width, imageData.height);
     const edges = gouge.detect_edges(energy);
     const rgba = gouge.energy_to_rgba(edges);
 
-    console.log(rgba);
+    console.log(performance.now());
 
     setTransformedImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), imageData.width, imageData.height));
   }, [imageData, operation, gouge]);
