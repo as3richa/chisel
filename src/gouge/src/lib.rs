@@ -170,21 +170,10 @@ impl EdgeImage {
     pub fn to_rgba(&self) -> Vec<u8> {
         let EdgeImage(img) = self;
 
-        let (min, max) = img
-            .data
-            .iter()
-            .fold((f32::INFINITY, -f32::INFINITY), |(min, max), &value| {
-                (f32::min(min, value as f32), f32::max(max, value as f32))
-            });
-
-        let range = if max - min < 1e-4 { 1.0 } else { max - min };
-
         let data = unsafe {
             build_vec_in_place::<u8, _>(4 * img.size(), |ptr| {
                 for (i, &value) in img.data.iter().enumerate() {
-                    let scaled = 255.0 * f32::min(((value as f32) - min) / range, 1.0);
-                    let byte = scaled.round() as u8;
-
+                    let byte = std::cmp::min(value, 255) as u8;
                     let j = 4 * i;
                     ptr.add(j).write(byte);
                     ptr.add(j + 1).write(byte);
