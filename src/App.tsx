@@ -3,15 +3,7 @@ import {Controls, Operation ,defaultOperation} from "./Controls";
 import {loadImageData} from "./loadImageData";
 import {useViewportSize} from "./useViewportSize";
 import {ImageDataCanvas} from "./ImageDataCanvas";
-import {detectEdges, edgesToImageData} from "./detectEdges";
-import { carveSeams } from "./carveSeam";
-import type {EnergyMap} from "./gouge/pkg";
-
-type Gouge = {
-  rgba_to_energy: (rgba: Uint8Array, width: number, height: number) => EnergyMap,
-  energy_to_rgba: (energy: EnergyMap) => Uint8Array,
-  detect_edges: (energy: EnergyMap) => EnergyMap,
-};
+import type Gouge from "./gouge/pkg";
 
 export function App(): ReactElement {
   const [imageData, setImageData] = useState<ImageData | null>(null);
@@ -20,7 +12,7 @@ export function App(): ReactElement {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [operation, setOperation] = useState<Operation>(defaultOperation);
   const [justLoaded, setJustLoaded] = useState<boolean>(false);
-  const [gouge, setGouge] = useState<Gouge | null>(null);
+  const [gouge, setGouge] = useState<typeof Gouge | null>(null);
 
   const viewportSize = useViewportSize();
 
@@ -66,13 +58,13 @@ export function App(): ReactElement {
     }
 
     console.log(performance.now());
-    const energy = gouge.rgba_to_energy(new Uint8Array(imageData.data.buffer), imageData.width, imageData.height);
-    const edges = gouge.detect_edges(energy);
-    const rgba = gouge.energy_to_rgba(edges);
+    const energy = gouge.IntensityImage.new(imageData);
+    const edges = energy.detect_edges();
+    const rgba = new ImageData(new Uint8ClampedArray(edges.to_rgba().buffer), imageData.width, imageData.height);
 
     console.log(performance.now());
 
-    setTransformedImageData(new ImageData(new Uint8ClampedArray(rgba.buffer), imageData.width, imageData.height));
+    setTransformedImageData(rgba);
   }, [imageData, operation, gouge]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
