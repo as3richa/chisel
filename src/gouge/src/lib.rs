@@ -68,6 +68,12 @@ impl IntensityImage {
     }
 
     pub fn detect_edges(&self) -> EdgeImage {
+        fn f(a: i16, b: i16, c: i16, d: i16, e: i16, f: i16, g: i16, h: i16) -> i16 {
+            let v_x = (-a + c - 2 * d + 2 * e - h + f) as f32;
+            let v_y = (a + 2 * b + c - f - 2 * g - h) as f32;
+            (v_x * v_x + v_y * v_y).sqrt().round() as i16
+        }
+
         let IntensityImage(img) = self;
 
         if img.size() == 0 {
@@ -80,50 +86,70 @@ impl IntensityImage {
 
         let sobel = unsafe {
             build_vec_in_place::<i16, _>(img.size(), |ptr| {
-                let mut convolved_row = vec![(0, 0); img.width() + 2];
+                for y in 0..img.height() {
+                    let curr_off = img.width() * y;
 
-                let convolve_row_v =
-                    |convolved_row: &mut Vec<(i16, i16)>, prev: usize, curr: usize, next: usize| {
-                        let prev_off = img.width() * prev;
-                        let curr_off = img.width() * curr;
-                        let next_off = img.width() * next;
-
-                        for x in 0..img.width() {
-                            *convolved_row.get_unchecked_mut(x + 1) = {
-                                let a = *img.data.get_unchecked(prev_off + x);
-                                let b = *img.data.get_unchecked(curr_off + x);
-                                let c = *img.data.get_unchecked(next_off + x);
-                                (
-                                    -(a as i16) + (c as i16),
-                                    (a as i16) + 2 * (b as i16) + (c as i16),
-                                )
-                            };
-                        }
-
-                        *convolved_row.get_unchecked_mut(0) = *convolved_row.get_unchecked(1);
-                        *convolved_row.get_unchecked_mut(img.width() + 1) =
-                            *convolved_row.get_unchecked(img.width());
+                    let prev_off = if y == 0 {
+                        curr_off
+                    } else {
+                        curr_off - img.width()
                     };
 
-                for y in 0..img.height() {
-                    let prev = if y == 0 { 0 } else { y - 1 };
-                    let next = if y == img.height() - 1 { y } else { y + 1 };
-                    convolve_row_v(&mut convolved_row, prev, y, next);
+                    let next_off = if y == img.height() - 1 {
+                        curr_off
+                    } else {
+                        curr_off + img.width()
+                    };
 
-                    let mut a = *convolved_row.get_unchecked(0);
-                    let mut b = *convolved_row.get_unchecked(1);
+                    let curr = |x: usize| *img.data.get_unchecked(curr_off + x) as i16;
+                    let prev = |x: usize| *img.data.get_unchecked(prev_off + x) as i16;
+                    let next = |x: usize| *img.data.get_unchecked(next_off + x) as i16;
 
-                    for (x, &c) in convolved_row.get_unchecked(2..).iter().enumerate() {
-                        let gx = a.0 + 2 * b.0 + c.0;
-                        let gy = -a.1 + c.1;
+                    let write = |x: usize, value: i16| ptr.add(curr_off + x).write(value);
 
-                        let fp_value =
-                            ((gx as f32) * (gx as f32) + (gy as f32) * (gy as f32)).sqrt();
-                        ptr.add(img.width() * y + x).write(fp_value.round() as i16);
+                    write(
+                        0,
+                        f(
+                            prev(0),
+                            prev(0),
+                            prev(1),
+                            curr(0),
+                            curr(1),
+                            next(0),
+                            next(0),
+                            next(1),
+                        ),
+                    );
 
-                        a = b;
-                        b = c;
+                    for x in 1..img.width() - 1 {
+                        write(
+                            x,
+                            f(
+                                prev(x - 1),
+                                prev(x),
+                                prev(x + 1),
+                                curr(x - 1),
+                                curr(x + 1),
+                                next(x - 1),
+                                next(x),
+                                next(x + 1),
+                            ),
+                        );
                     }
+
+                    write(
+                        img.width() - 1,
+                        f(
+                            prev(img.width() - 2),
+                            prev(img.width() - 1),
+                            prev(img.width() - 1),
+                            curr(img.width() - 2),
+                            curr(img.width() - 1),
+                            next(img.width() - 2),
+                            next(img.width() - 1),
+                            next(img.width() - 1),
+                        ),
+                    );
                 }
             })
         };
