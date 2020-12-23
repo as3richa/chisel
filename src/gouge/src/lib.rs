@@ -54,94 +54,6 @@ fn intens_from_rgba(rgba_data: &[u8], width: u32, height: u32) -> Image<u8> {
     }
 }
 
-fn convolve_1x3<T: Into<i16> + Copy>(img: &Image<T>, x: i16, y: i16, z: i16) -> Image<i16> {
-    let conv_data = unsafe {
-        build_vec_in_place::<i16, _>(img.size(), |ptr| {
-            if img.height == 0 {
-                return;
-            }
-
-            if img.height == 1 {
-                let w = z + y + x;
-                for (i, &a) in img.data.iter().enumerate() {
-                    ptr.add(i).write(w * a.into())
-                }
-                return;
-            }
-
-            for i in 0..img.width() {
-                let a = (*img.data.get_unchecked(i)).into();
-                let b = (*img.data.get_unchecked(i + img.width())).into();
-                ptr.add(i).write((z + y) * a + x * b);
-            }
-
-            for i in img.width()..img.size() - img.width() {
-                let a = (*img.data.get_unchecked(i - img.width())).into();
-                let b = (*img.data.get_unchecked(i)).into();
-                let c = (*img.data.get_unchecked(i + img.width())).into();
-                ptr.add(i).write(z * a + y * b + x * c);
-            }
-
-            for i in img.size() - img.width()..img.size() {
-                let a = (*img.data.get_unchecked(i - img.width())).into();
-                let b = (*img.data.get_unchecked(i)).into();
-                ptr.add(i).write(z * a + (y + x) * b);
-            }
-        })
-    };
-
-    Image {
-        data: conv_data,
-        width: img.width,
-        height: img.height,
-    }
-}
-
-fn convolve_3x1<T: Into<i16> + Copy>(img: &Image<T>, x: i16, y: i16, z: i16) -> Image<i16> {
-    let conv_data = unsafe {
-        build_vec_in_place::<i16, _>(img.size(), |data_ptr| {
-            if img.width == 0 {
-                return;
-            }
-
-            if img.width == 1 {
-                let w = z + y + x;
-                for (i, &a) in img.data.iter().enumerate() {
-                    data_ptr.add(i).write(w * a.into())
-                }
-                return;
-            }
-
-            for i in 0..img.height() {
-                let offset = img.width() * i;
-                let img_row = img.data.get_unchecked(offset..offset + img.width());
-                let ptr_row = data_ptr.add(offset);
-
-                let mut a = (*img_row.get_unchecked(0)).into();
-                let mut b = a;
-                let mut c = (*img_row.get_unchecked(1)).into();
-
-                ptr_row.write(z * a + y * b + x * c);
-
-                for j in 1..img.width() - 1 {
-                    a = b;
-                    b = c;
-                    c = (*img_row.get_unchecked(j + 1)).into();
-                    ptr_row.add(j).write(z * a + y * b + x * c);
-                }
-
-                ptr_row.add(img.width() - 1).write(z * a + y * b + x * c);
-            }
-        })
-    };
-
-    Image {
-        data: conv_data,
-        width: img.width,
-        height: img.height,
-    }
-}
-
 #[wasm_bindgen]
 pub struct IntensityImage(Image<u8>);
 
@@ -157,18 +69,67 @@ impl IntensityImage {
 
     pub fn detect_edges(&self) -> EdgeImage {
         let IntensityImage(img) = self;
-        let grad_x = convolve_1x3(&convolve_3x1(img, 1, 0, -1), 1, 2, 1);
-        let mut grad_y = convolve_3x1(&convolve_1x3(img, 1, 2, 1), 1, 0, -1);
 
-        for (i, gy) in grad_y.data.iter_mut().enumerate() {
-            let gx = unsafe { *grad_x.data.get_unchecked(i) };
-
-            let fp_value = ((gx as f32) * (gx as f32) + (*gy as f32) * (*gy as f32)).sqrt();
-            *gy = fp_value.round() as i16;
+        if img.size() == 0 {
+            return EdgeImage(Image {
+                data: vec![],
+                width: img.width,
+                height: img.height,
+            });
         }
 
+        let sobel = unsafe {
+            build_vec_in_place::<i16, _>(img.size(), |ptr| {
+                let mut convolved_row = vec![(0, 0); img.width() + 2];
+
+                let convolve_row_v =
+                    |convolved_row: &mut Vec<(i16, i16)>, prev: usize, curr: usize, next: usize| {
+                        let prev_off = img.width() * prev;
+                        let curr_off = img.width() * curr;
+                        let next_off = img.width() * next;
+
+                        for x in 0..img.width() {
+                            *convolved_row.get_unchecked_mut(x + 1) = {
+                                let a = *img.data.get_unchecked(prev_off + x);
+                                let b = *img.data.get_unchecked(curr_off + x);
+                                let c = *img.data.get_unchecked(next_off + x);
+                                (
+                                    -(a as i16) + (c as i16),
+                                    (a as i16) + 2 * (b as i16) + (c as i16),
+                                )
+                            };
+                        }
+
+                        *convolved_row.get_unchecked_mut(0) = *convolved_row.get_unchecked(1);
+                        *convolved_row.get_unchecked_mut(img.width() + 1) =
+                            *convolved_row.get_unchecked(img.width());
+                    };
+
+                for y in 0..img.height() {
+                    let prev = if y == 0 { 0 } else { y - 1 };
+                    let next = if y == img.height() - 1 { y } else { y + 1 };
+                    convolve_row_v(&mut convolved_row, prev, y, next);
+
+                    let mut a = *convolved_row.get_unchecked(0);
+                    let mut b = *convolved_row.get_unchecked(1);
+
+                    for (x, &c) in convolved_row.get_unchecked(2..).iter().enumerate() {
+                        let gx = a.0 + 2 * b.0 + c.0;
+                        let gy = -a.1 + c.1;
+
+                        let fp_value =
+                            ((gx as f32) * (gx as f32) + (gy as f32) * (gy as f32)).sqrt();
+                        ptr.add(img.width() * y + x).write(fp_value.round() as i16);
+
+                        a = b;
+                        b = c;
+                    }
+                }
+            })
+        };
+
         EdgeImage(Image {
-            data: grad_y.data,
+            data: sobel,
             width: img.width,
             height: img.height,
         })
