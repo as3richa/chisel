@@ -3,7 +3,7 @@ import {Controls, Operation ,defaultOperation} from "./Controls";
 import {loadImageData} from "./loadImageData";
 import {useViewportSize} from "./useViewportSize";
 import {ImageDataCanvas} from "./ImageDataCanvas";
-import type Gouge from "./gouge/pkg";
+import type Gouge from "./rs/pkg";
 
 export function App(): ReactElement {
   const [imageData, setImageData] = useState<ImageData | null>(null);
@@ -17,7 +17,7 @@ export function App(): ReactElement {
   const viewportSize = useViewportSize();
 
   useEffect(() => { 
-    import("./gouge/pkg")
+    import("./rs/pkg")
       .then(setGouge)
       .catch(alert);
   }, []);
