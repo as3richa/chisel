@@ -1,90 +1,104 @@
-import React, { useMemo, ReactElement, useEffect, useState, CSSProperties } from "react";
-import { Controls, Operation, defaultOperation } from "./Controls";
+import React, { useMemo, ReactElement, useEffect, useState, CSSProperties, useCallback } from "react";
+import { Controls } from "./Controls";
 import { loadImage as loadImageData } from "./loadImage";
 import { useViewportSize } from "./useViewportSize";
 import { ImageDataCanvas } from "./ImageDataCanvas";
 import { useImageWorker } from "./useImageWorker";
-import { workerData } from "worker_threads";
+import type { Transformation } from "./ImageWorker";
 
+const placeholderTrans: Transformation = { command: "carve", width: 1, height: 1 };
+
+const minScale = 0.05;
+const maxScale = 2;
 
 export function App(): ReactElement {
-  const [transformedImageData, setTransformedImageData] = useState<ImageData | null>(null);
   const [scale, setScale] = useState(1);
+  const [fit, setFit] = useState(true);
+
+  const viewport = useViewportSize();
+
+  const [trans, setTrans] = useState<Transformation | null>(null);
+
+  const [transformed, setTransformed] = useState<ImageData | null>(null);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [operation, setOperation] = useState<Operation>(defaultOperation);
-  const [justLoaded, setJustLoaded] = useState<boolean>(false);
 
-  const worker = useImageWorker();
+  const { imageMeta, setImage, transformImage } = useImageWorker();
 
-  const viewportSize = useViewportSize();
+  const loadImage = useCallback((src: string) => {
+    setTrans(null);
 
-  function loadImage(src: string) {
-    loadImageData(src)
+    return loadImageData(src)
       .then(image => {
-        worker.setImage(image);
+        setImage(image);
+        setTrans({ command: "carve", width: image.width, height: image.height });
       })
-      .catch(err => setErrorMessage(err.message || "Oops!"));
-  }
+      .catch(err => { setErrorMessage(err.message || "Oops!"); });
+  }, [setImage]);
 
-  function fitToViewport() {
-    if (transformedImageData === null) {
+  useEffect(() => { loadImage("the-persistence-of-memory.jpg"); }, [loadImage]);
+
+  useEffect(() => {
+    if (imageMeta === null || trans === null) {
       return;
     }
-    const scale = 0.9 * Math.min(
-      viewportSize[0] / transformedImageData.width,
-      viewportSize[1] / transformedImageData.height
+    console.log([imageMeta, transformImage, trans]);
+    transformImage(trans).then(setTransformed);
+  }, [trans, imageMeta, transformImage]);
+
+  useEffect(() => {
+    if (!fit || transformed === null) {
+      return;
+    }
+
+    const scale = 0.85 * Math.min(
+      viewport.width / transformed.width,
+      viewport.height / transformed.height,
     );
-    setScale(Math.max(0.05, Math.min(2, scale)));
-  }
 
-  useEffect(() => loadImage("the-persistence-of-memory.jpg"), []);
-
-  useEffect(() => {
-    if (transformedImageData !== null && justLoaded) {
-      fitToViewport();
-      setJustLoaded(false);
-    }
-  }, [transformedImageData, justLoaded]);
-
-  useEffect(() => {
-    if (worker.imageMeta === null) {
-      return;
-    }
-
-    worker.edges().then(setTransformedImageData);
-  }, [worker.imageMeta]);
+    setScale(Math.min(maxScale, Math.max(minScale, scale)));
+  }, [fit, viewport, transformed]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
-    if (transformedImageData === null) {
+    if (transformed === null) {
       return {};
     }
 
-    const scaledWidth = Math.round(scale * transformedImageData.width);
-    const scaledHeight = Math.round(scale * transformedImageData.height);
+    const width = Math.round(scale * transformed.width);
+    const height = Math.round(scale * transformed.height);
+    const left = width < viewport.width ? (viewport.width - width) / 2 : 0;
+    const top = height < viewport.height ? (viewport.height - height) / 2 : 0;
 
     return {
       position: "absolute",
-      width: scaledWidth,
-      height: scaledHeight,
-      left: scaledWidth < viewportSize[0] ? (viewportSize[0] - scaledWidth) / 2 : 0,
-      top: scaledHeight < viewportSize[1] ? (viewportSize[1] - scaledHeight) / 2 : 0
+      width,
+      height,
+      left,
+      top,
     };
-  }, [scale, viewportSize]);
+  }, [scale, viewport, transformed]);
 
   return (
     <div>
-      {transformedImageData && <ImageDataCanvas data={transformedImageData} style={canvasStyle} />}
+      {transformed && <ImageDataCanvas data={transformed} style={canvasStyle} />}
       <div style={{ position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16 }}>
         <Controls
-          loading={false}
           errorMessage={errorMessage}
           scale={scale}
-          operation={operation}
-          seamCarveRanges={[[1, 1000], [1, 1000]]}
-          onUpload={file => loadImage(URL.createObjectURL(file))}
-          onScaleChange={setScale}
-          onFitToViewport={fitToViewport}
-          onOperationChange={setOperation} />
+          minScale={minScale}
+          maxScale={maxScale}
+          setScale={setScale}
+          fit={fit}
+          setFit={setFit}
+          imageWidth={imageMeta === null ? 1 : imageMeta.width}
+          imageHeight={imageMeta === null ? 1 : imageMeta.height}
+          trans={trans !== null ? trans : placeholderTrans}
+          setTrans={setTrans}
+          uploadFile={file => {
+            const url = URL.createObjectURL(file);
+            loadImage(url).then(() => URL.revokeObjectURL(url));
+          }}
+        />
       </div>
     </div>
   );

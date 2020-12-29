@@ -1,14 +1,11 @@
 import { useMemo, useState } from "react";
 import ImageWorker from "worker-loader!./ImageWorker.ts";
-import type { Request, Response } from "./ImageWorker";
+import type { Request, Response, Transformation } from "./ImageWorker";
 
 export type WorkerApi = {
   imageMeta: ImageMeta | null,
   setImage: (image: ImageData) => void,
-  carve: (width: number, height: number) => Promise<ImageData>,
-  seams: (width: number, height: number) => Promise<ImageData>,
-  edges: () => Promise<ImageData>,
-  original: () => Promise<ImageData>,
+  transformImage: (trans: Transformation) => Promise<ImageData>,
 }
 
 export type ImageMeta = {
@@ -19,12 +16,12 @@ export type ImageMeta = {
 export function useImageWorker(): WorkerApi {
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null);
 
-  const methods = useMemo(() => {
+  const { setImage, transformImage } = useMemo(() => {
     const worker = new ImageWorker();
     const outstanding: Array<(image: ImageData) => void> = [];
 
     const send = (req: Request, transfer?: Array<ArrayBuffer>) => {
-      worker.postMessage(req);
+      worker.postMessage(req, transfer || []);
     };
 
     const receive = () => {
@@ -49,47 +46,21 @@ export function useImageWorker(): WorkerApi {
       send({
         command: "set",
         image: {
-          buffer: image.data,
+          buffer: image.data.buffer,
           width: image.width,
           height: image.height,
         }
-      }, [image.data]);
+      }, [image.data.buffer]);
       setImageMeta({ width: image.width, height: image.height });
     };
 
-    const carve = (width: number, height: number) => {
-      send({
-        command: "carve",
-        width,
-        height,
-      });
+    const transformImage = (trans: Transformation) => {
+      send(trans);
       return receive();
     };
 
-    const seams = (width: number, height: number) => {
-      send({
-        command: "seams",
-        width,
-        height,
-      });
-      return receive();
-    };
-
-    const edges = () => {
-      send({ command: "edges" });
-      return receive();
-    };
-
-    const original = () => {
-      send({ command: "original" });
-      return receive();
-    };
-
-    return { setImage, carve, seams, edges, original };
+    return { setImage, transformImage };
   }, []);
 
-  return {
-    imageMeta,
-    ...methods,
-  };
+  return { imageMeta, setImage, transformImage };
 }

@@ -1,15 +1,20 @@
 const ctx = self as unknown as Worker;
 
-export type Request =
-  { command: "set", image: TransferableImageData } |
+export type CarveTransformation =
   { command: "carve", width: number, height: number } |
-  { command: "seams", width: number, height: number } |
+  { command: "seams", width: number, height: number };
+
+export type Transformation = CarveTransformation |
   { command: "edges" } |
+  { command: "intens"} |
   { command: "original" };
+
+export type Request = Transformation |
+  { command: "set", image: TransferableImageData };
 
 export type Response = TransferableImageData;
 
-type TransferableImageData = {
+export type TransferableImageData = {
   buffer: ArrayBuffer,
   width: number,
   height: number,
@@ -62,6 +67,16 @@ ctx.addEventListener("message", event => {
       const { edges, width, height } = getState();
       ctx.postMessage({
         buffer: toRgba(edges),
+        width,
+        height,
+      });
+      break;
+    }
+
+    case "intens": {
+      const { intens, width, height } = getState();
+      ctx.postMessage({
+        buffer: toRgba(intens),
         width,
         height,
       });

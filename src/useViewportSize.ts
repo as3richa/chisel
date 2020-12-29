@@ -1,21 +1,30 @@
 import { useEffect, useState } from "react";
 
-export function useViewportSize(): [number, number] {
+export type ViewportSize = {
+  width: number,
+  height: number,
+};
+
+export function useViewportSize(): ViewportSize {
   const html = document.documentElement;
 
-  const [viewportSize, setViewportSize] = useState<[number, number]>([
-    html.clientWidth, html.clientHeight
-  ]);
+  const [viewportSize, setViewportSize] = useState<ViewportSize>({
+    width: html.clientWidth,
+    height: html.clientHeight,
+  });
 
   useEffect(() => {
     const onResize = () => {
-      setViewportSize([html.clientWidth, html.clientHeight]);
+      setViewportSize({
+        width: html.clientWidth,
+        height: html.clientHeight,
+      });
     };
 
     window.addEventListener("resize", onResize);
 
     return () => { window.removeEventListener("resize", onResize); };
-  }, []);
+  }, [html]);
 
   return viewportSize;
 }

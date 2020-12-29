@@ -1,33 +1,94 @@
 import React, { ReactElement } from "react";
+import type { CarveTransformation, Transformation } from "./ImageWorker";
 
-export type ControlsProps = {
-  loading: boolean,
+type Props = {
   errorMessage: string | null,
   scale: number,
-  operation: Operation,
-  seamCarveRanges: [[number, number], [number, number]],
-  onUpload: (file: File) => void,
-  onScaleChange: (scale: number) => void,
-  onFitToViewport: () => void,
-  onOperationChange: (op: Operation) => void
+  minScale: number,
+  maxScale: number,
+  setScale: (scale: number) => void,
+  fit: boolean,
+  setFit: (fit: boolean) => void,
+  imageWidth: number,
+  imageHeight: number,
+  trans: Transformation,
+  setTrans: (trans: Transformation) => void,
+  uploadFile: (file: File) => void,
 };
 
-export type Operation =
-  { command: "carve", width: number, height: number } |
-  { command: "seams", width: number, height: number } |
-  { command: "edges" } |
-  { command: "original" };
+export function Controls(props: Props): ReactElement {
+  const {
+    errorMessage,
+    scale,
+    minScale,
+    maxScale,
+    setScale,
+    fit,
+    setFit,
+    trans,
+    setTrans,
+    imageWidth,
+    imageHeight,
+    uploadFile,
+  } = props;
 
-export const defaultOperation: Operation = {
-  command: "carve",
-  width: 0,
-  height: 0,
-};
+  const errorBanner = errorMessage && (
+    <div style={{ marginBottom: 12, color: "#ff0000" }}>{errorMessage}</div>
+  );
+
+  let carveControls = null;
+
+  if (trans.command === "carve" || trans.command === "seams") {
+    carveControls = (
+      <Carve
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        trans={trans}
+        setTrans={setTrans}
+        disabled={false}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        border: "1px solid grey",
+        padding: "12px",
+        color: "#333",
+        backgroundColor: "#eee",
+        width: 200,
+        fontSize: 12
+      }}>
+      {errorBanner}
+      <UploadInput uploadFile={uploadFile} />
+      <Scale
+        scale={scale}
+        min={minScale}
+        max={maxScale}
+        setScale={setScale}
+        fit={fit}
+        setFit={setFit}
+        disabled={false}
+      />
+      <CommandSelect
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        trans={trans}
+        setTrans={setTrans}
+        disabled={false}
+      />
+      {carveControls}
+    </div>
+  );
+}
 
 type LabeledNumericInputProps = {
   label: string,
   value: number,
-  range: [number, number],
+  min: number,
+  max: number,
   def: number
   units: string,
   disabled: boolean,
@@ -35,7 +96,7 @@ type LabeledNumericInputProps = {
 }
 
 function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
-  const { label, value, range: [min, max], def, units, disabled, onChange } = props;
+  const { label, value, min, max, def, units, disabled, onChange } = props;
 
   function handleEvent(event: React.ChangeEvent<HTMLInputElement>) {
     let value = parseInt(event.target.value);
@@ -75,24 +136,12 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
   );
 }
 
-export function Controls(props: ControlsProps): ReactElement {
-  const {
-    loading,
-    errorMessage,
-    scale,
-    operation,
-    seamCarveRanges: [hSeamCarveRange, vSeamCarveRange],
-    onUpload,
-    onScaleChange: setScale,
-    onFitToViewport: fitToViewport,
-    onOperationChange: setOperation
-  } = props;
+type UploadInputProps = {
+  uploadFile: (file: File) => void,
+};
 
-  const errorBanner = errorMessage && (
-    <div style={{ marginBottom: 12, color: "#f00" }}>{errorMessage}</div>
-  );
-
-  const uploadInput = (
+function UploadInput({ uploadFile }: UploadInputProps): ReactElement {
+  return (
     <label style={{
       display: "block",
       cursor: "pointer",
@@ -106,118 +155,141 @@ export function Controls(props: ControlsProps): ReactElement {
         onChange={event => {
           const file = event.target.files && event.target.files[0];
           if (file !== null) {
-            onUpload(file);
+            uploadFile(file);
           }
         }}
-        disabled={loading}
       />
-      Upload image...
+    Upload image...
     </label>
   );
+}
 
-  const scaleControls = (
+type ScaleProps = {
+  scale: number,
+  min: number,
+  max: number,
+  setScale: (scale: number) => void,
+  fit: boolean,
+  setFit: (fit: boolean) => void,
+  disabled: boolean,
+};
+
+function Scale({ scale, min, max, setScale, fit, setFit, disabled }: ScaleProps): ReactElement {
+  return (
     <div style={{ marginBottom: 12 }}>
       <LabeledNumericInput
         label="Scale"
         value={Math.round(100 * scale)}
-        range={[5, 200]}
+        min={Math.round(100 * min)}
+        max={Math.round(100 * max)}
         def={100}
-        onChange={value => setScale(value / 100)}
+        onChange={value => {
+          setFit(false);
+          setScale(value / 100);
+        }}
         units="%"
-        disabled={loading || errorMessage !== null}
+        disabled={disabled}
       />
-      <button
-        style={{ fontSize: 12, width: "100%" }}
-        disabled={loading || errorMessage !== null}
-        onClick={fitToViewport}
-      >Fit to viewport</button>
+      <label style={{ display: "block" }}>
+        <input type="checkbox" checked={fit} onChange={event => setFit(event.target.checked)} />
+        <span style={{ marginLeft: 4, verticalAlign: 3 }}>Fit to viewport</span>
+      </label>
     </div>
   );
+}
 
-  const commandSelect = (
+type CommandSelectProps = {
+  imageWidth: number,
+  imageHeight: number,
+  trans: Transformation,
+  setTrans: (trans: Transformation) => void,
+  disabled: boolean,
+};
+
+function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: CommandSelectProps): ReactElement {
+  const options = [
+    { value: "carve", memo: "Carve seams" },
+    { value: "seams", memo: "Highlight seams" },
+    { value: "edges", memo: "Detect edges" },
+    { value: "intens", memo: "Compute Intensity" },
+    { value: "original", memo: "Show original" },
+  ];
+
+  return (
     <div>
-      <div style={{ marginBottom: 8 }}>command:</div>
+      <div style={{ marginBottom: 8 }}>Operation:</div>
       <select
         style={{ width: "100%", fontSize: 12, display: "block", marginBottom: 12 }}
-        value={operation.command}
-        disabled={loading || errorMessage !== null}
+        value={trans.command}
+        disabled={disabled}
         onChange={event => {
           const command = event.target.value;
 
-          if (command === operation.command) {
+          if (command === trans.command) {
             return;
           }
 
-          if (command === "carve") {
-            setOperation(defaultOperation);
+          if (command === "carve" || command === "seams") {
+            const [width, height] = (trans.command === "carve" || trans.command === "seams")
+              ? [trans.width, trans.height]
+              : [imageWidth, imageHeight];
+            setTrans({ command, width, height });
           } else {
-            setOperation({ command: "edges" });
+            if (command !== "edges" && command !== "intens" && command !== "original") {
+              throw new Error("Bad command");
+            }
+            setTrans({ command });
           }
         }}>
-        <option value="carve">
-          Shrink/enlarge image
-        </option>
-        <option value="edge-detect">
-          Detect edges
-        </option>
+        {options.map(({ value, memo }) => <option key={value} value={value}>{memo}</option>)}
       </select>
     </div>
   );
+}
 
-  let operationControls = null;
+type CarveProps = {
+  imageWidth: number,
+  imageHeight: number,
+  trans: CarveTransformation,
+  setTrans: (trans: Transformation) => void,
+  disabled: boolean,
+}
 
-  if (operation.command === "carve" || operation.command === "seams") {
-    operationControls = (
-      <div>
-        <LabeledNumericInput
-          label="Horizontal"
-          value={operation.width}
-          range={hSeamCarveRange}
-          def={0}
-          units="pixels"
-          disabled={loading || errorMessage !== null}
-          onChange={value => {
-            setOperation({
-              command: operation.command,
-              width: value,
-              height: operation.height,
-            });
-          }}
-        />
-        <LabeledNumericInput
-          label="Vertical"
-          value={operation.height}
-          range={vSeamCarveRange}
-          def={0}
-          units="pixels"
-          disabled={loading || errorMessage !== null}
-          onChange={value => {
-            setOperation({
-              command: operation.command,
-              width: operation.width,
-              height: operation.height,
-            });
-          }}
-        />
-      </div>
-    );
-  }
-
+function Carve({ imageWidth, imageHeight, trans, setTrans, disabled }: CarveProps): ReactElement {
   return (
-    <div
-      style={{
-        borderRadius: 12,
-        border: "1px solid grey",
-        padding: "12px",
-        color: "#333",
-        backgroundColor: "#eee",
-        width: 200,
-        fontSize: 12
-      }}>
-      {errorBanner}
-      {uploadInput}
-      {scaleControls}
-      {commandSelect}
-      {operationControls}
-    </div>);
+    <div>
+      <LabeledNumericInput
+        label="Width"
+        value={trans.width}
+        min={1}
+        max={2 * imageWidth}
+        def={imageWidth}
+        units="pixels"
+        disabled={disabled}
+        onChange={value => {
+          setTrans({
+            command: trans.command,
+            width: value,
+            height: trans.height,
+          });
+        }}
+      />
+      <LabeledNumericInput
+        label="Height"
+        value={trans.height}
+        min={1}
+        max={2 * imageHeight}
+        def={imageHeight}
+        units="pixels"
+        disabled={disabled}
+        onChange={value => {
+          setTrans({
+            command: trans.command,
+            width: trans.width,
+            height: value,
+          });
+        }}
+      />
+    </div>
+  );
 }
