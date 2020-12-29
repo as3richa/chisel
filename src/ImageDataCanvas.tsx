@@ -1,6 +1,4 @@
-import React, { CSSProperties, ReactElement, useCallback, useEffect, useMemo, useRef } from "react";
-
-const ctxError = new Error("HTMLCanvasElement#getContext(\"2d\") returned null");
+import React, { CSSProperties, ReactElement, useCallback, useEffect, useState } from "react";
 
 export type ImageDataCanvasProps = {
   data: ImageData,
@@ -8,31 +6,18 @@ export type ImageDataCanvasProps = {
 };
 
 export function ImageDataCanvas({data, style}: ImageDataCanvasProps): ReactElement {
-  const canvasSize = useMemo<[number, number]>(() => {
-    return [data.width, data.height];
-  }, [data]);
-
-  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
 
   const setCanvas = useCallback(canvas => {
-    if (canvas === null) {
-      ctxRef.current = null;
-    } else {
-      const ctx = canvas.getContext("2d");
-      if (ctx === null) {
-        throw ctxError;
-      }
-      ctxRef.current = ctx;
-    }
+    setCtx(canvas && canvas.getContext("2d"));
   }, []);
 
   useEffect(() => {
-    const ctx = ctxRef.current;
     if (ctx === null) {
       return;
     }
     ctx.putImageData(data, 0, 0);
-  }, [canvasSize]);
+  }, [data, ctx]);
 
   return (
     <canvas width={data.width} height={data.height} style={style} ref={setCanvas} />

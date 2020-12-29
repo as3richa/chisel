@@ -1,33 +1,27 @@
-import React, {useMemo, ReactElement, useEffect, useState, CSSProperties} from "react";
-import {Controls, Operation ,defaultOperation} from "./Controls";
-import {loadImageData} from "./loadImageData";
-import {useViewportSize} from "./useViewportSize";
-import {ImageDataCanvas} from "./ImageDataCanvas";
-import type Gouge from "./rs/pkg";
+import React, { useMemo, ReactElement, useEffect, useState, CSSProperties } from "react";
+import { Controls, Operation, defaultOperation } from "./Controls";
+import { loadImage as loadImageData } from "./loadImage";
+import { useViewportSize } from "./useViewportSize";
+import { ImageDataCanvas } from "./ImageDataCanvas";
+import { useImageWorker } from "./useImageWorker";
+import { workerData } from "worker_threads";
+
 
 export function App(): ReactElement {
-  const [imageData, setImageData] = useState<ImageData | null>(null);
   const [transformedImageData, setTransformedImageData] = useState<ImageData | null>(null);
   const [scale, setScale] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [operation, setOperation] = useState<Operation>(defaultOperation);
   const [justLoaded, setJustLoaded] = useState<boolean>(false);
-  const [gouge, setGouge] = useState<typeof Gouge | null>(null);
+
+  const worker = useImageWorker();
 
   const viewportSize = useViewportSize();
 
-  useEffect(() => { 
-    import("./rs/pkg")
-      .then(setGouge)
-      .catch(alert);
-  }, []);
-
   function loadImage(src: string) {
     loadImageData(src)
-      .then(data => {
-        setImageData(data);
-        setOperation(defaultOperation);
-        setJustLoaded(true);
+      .then(image => {
+        worker.setImage(image);
       })
       .catch(err => setErrorMessage(err.message || "Oops!"));
   }
@@ -36,7 +30,7 @@ export function App(): ReactElement {
     if (transformedImageData === null) {
       return;
     }
-    const scale = 0.9*Math.min(
+    const scale = 0.9 * Math.min(
       viewportSize[0] / transformedImageData.width,
       viewportSize[1] / transformedImageData.height
     );
@@ -53,19 +47,12 @@ export function App(): ReactElement {
   }, [transformedImageData, justLoaded]);
 
   useEffect(() => {
-    if(imageData === null || gouge === null) {
+    if (worker.imageMeta === null) {
       return;
     }
 
-    console.log(performance.now());
-    const energy = gouge.IntensityImage.new(imageData);
-    const edges = energy.detect_edges();
-    const rgba = new ImageData(new Uint8ClampedArray(edges.to_rgba().buffer), imageData.width, imageData.height);
-
-    console.log(performance.now());
-
-    setTransformedImageData(rgba);
-  }, [imageData, operation, gouge]);
+    worker.edges().then(setTransformedImageData);
+  }, [worker.imageMeta]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
     if (transformedImageData === null) {
@@ -87,13 +74,13 @@ export function App(): ReactElement {
   return (
     <div>
       {transformedImageData && <ImageDataCanvas data={transformedImageData} style={canvasStyle} />}
-      <div style={{position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16}}>
+      <div style={{ position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16 }}>
         <Controls
-          loading={imageData === null}
+          loading={false}
           errorMessage={errorMessage}
           scale={scale}
           operation={operation}
-          seamCarveRanges={imageData === null ? [[0, 0], [0, 0]] : [[-imageData.width + 1, imageData.width], [-imageData.height + 1, imageData.height]]}
+          seamCarveRanges={[[1, 1000], [1, 1000]]}
           onUpload={file => loadImage(URL.createObjectURL(file))}
           onScaleChange={setScale}
           onFitToViewport={fitToViewport}

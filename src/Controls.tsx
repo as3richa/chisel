@@ -13,12 +13,15 @@ export type ControlsProps = {
 };
 
 export type Operation =
-  { mode: "seam-carve", size: [number, number] } |
-  { mode: "edge-detect" };
+  { command: "carve", width: number, height: number } |
+  { command: "seams", width: number, height: number } |
+  { command: "edges" } |
+  { command: "original" };
 
 export const defaultOperation: Operation = {
-  mode: "seam-carve",
-  size: [0, 0],
+  command: "carve",
+  width: 0,
+  height: 0,
 };
 
 type LabeledNumericInputProps = {
@@ -32,8 +35,8 @@ type LabeledNumericInputProps = {
 }
 
 function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
-  const {label, value, range: [min, max], def, units, disabled, onChange} = props;
-  
+  const { label, value, range: [min, max], def, units, disabled, onChange } = props;
+
   function handleEvent(event: React.ChangeEvent<HTMLInputElement>) {
     let value = parseInt(event.target.value);
     if (isNaN(value)) {
@@ -48,11 +51,11 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
 
   return (
     <div>
-      <div style={{marginBottom: 8}}>{label}:</div>
-      <div style={{marginBottom: 8}}>
+      <div style={{ marginBottom: 8 }}>{label}:</div>
+      <div style={{ marginBottom: 8 }}>
         <input
           type="number"
-          style={{fontSize: 12, width: 80}}
+          style={{ fontSize: 12, width: 80 }}
           value={value}
           min={min}
           max={max}
@@ -62,7 +65,7 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
       </div>
       <input
         type="range"
-        style={{margin: "0 0 8px 0", display: "block"}}
+        style={{ margin: "0 0 8px 0", display: "block" }}
         value={value}
         min={min}
         max={max}
@@ -86,7 +89,7 @@ export function Controls(props: ControlsProps): ReactElement {
   } = props;
 
   const errorBanner = errorMessage && (
-    <div style={{marginBottom: 12, color: "#f00"}}>{errorMessage}</div>
+    <div style={{ marginBottom: 12, color: "#f00" }}>{errorMessage}</div>
   );
 
   const uploadInput = (
@@ -98,7 +101,7 @@ export function Controls(props: ControlsProps): ReactElement {
     }}>
       <input
         type="file"
-        style={{display: "none"}}
+        style={{ display: "none" }}
         accept="image/*"
         onChange={event => {
           const file = event.target.files && event.target.files[0];
@@ -113,10 +116,10 @@ export function Controls(props: ControlsProps): ReactElement {
   );
 
   const scaleControls = (
-    <div style={{marginBottom: 12}}>
+    <div style={{ marginBottom: 12 }}>
       <LabeledNumericInput
         label="Scale"
-        value={Math.round(100*scale)}
+        value={Math.round(100 * scale)}
         range={[5, 200]}
         def={100}
         onChange={value => setScale(value / 100)}
@@ -124,34 +127,34 @@ export function Controls(props: ControlsProps): ReactElement {
         disabled={loading || errorMessage !== null}
       />
       <button
-        style={{fontSize: 12, width: "100%"}}
+        style={{ fontSize: 12, width: "100%" }}
         disabled={loading || errorMessage !== null}
         onClick={fitToViewport}
       >Fit to viewport</button>
     </div>
   );
 
-  const modeSelect = (
+  const commandSelect = (
     <div>
-      <div style={{marginBottom: 8}}>Mode:</div>
+      <div style={{ marginBottom: 8 }}>command:</div>
       <select
-        style={{width: "100%", fontSize: 12, display: "block", marginBottom: 12}}
-        value={operation.mode}
+        style={{ width: "100%", fontSize: 12, display: "block", marginBottom: 12 }}
+        value={operation.command}
         disabled={loading || errorMessage !== null}
         onChange={event => {
-          const mode = event.target.value;
+          const command = event.target.value;
 
-          if (mode === operation.mode) {
+          if (command === operation.command) {
             return;
           }
-          
-          if (mode === "seam-carve") {
+
+          if (command === "carve") {
             setOperation(defaultOperation);
           } else {
-            setOperation({mode: "edge-detect"});
+            setOperation({ command: "edges" });
           }
         }}>
-        <option value="seam-carve">
+        <option value="carve">
           Shrink/enlarge image
         </option>
         <option value="edge-detect">
@@ -161,39 +164,44 @@ export function Controls(props: ControlsProps): ReactElement {
     </div>
   );
 
-  const operationControls = (operation.mode === "edge-detect") ? null :
-    (
+  let operationControls = null;
+
+  if (operation.command === "carve" || operation.command === "seams") {
+    operationControls = (
       <div>
         <LabeledNumericInput
           label="Horizontal"
-          value={operation.size[0]}
+          value={operation.width}
           range={hSeamCarveRange}
           def={0}
-          units ="pixels"
+          units="pixels"
           disabled={loading || errorMessage !== null}
           onChange={value => {
             setOperation({
-              mode: operation.mode,
-              size: [value, operation.size[1]],
+              command: operation.command,
+              width: value,
+              height: operation.height,
             });
           }}
         />
         <LabeledNumericInput
           label="Vertical"
-          value={operation.size[1]}
+          value={operation.height}
           range={vSeamCarveRange}
           def={0}
-          units ="pixels"
+          units="pixels"
           disabled={loading || errorMessage !== null}
           onChange={value => {
             setOperation({
-              mode: operation.mode,
-              size: [operation.size[0], value],
+              command: operation.command,
+              width: operation.width,
+              height: operation.height,
             });
           }}
         />
       </div>
     );
+  }
 
   return (
     <div
@@ -209,7 +217,7 @@ export function Controls(props: ControlsProps): ReactElement {
       {errorBanner}
       {uploadInput}
       {scaleControls}
-      {modeSelect}
+      {commandSelect}
       {operationControls}
     </div>);
 }

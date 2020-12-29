@@ -4,7 +4,7 @@ const imageError = new Error("Invalid or empty image");
 
 let rasterizer: [HTMLCanvasElement, CanvasRenderingContext2D] | null = null;
 
-export function loadImageData(src: string): Promise<ImageData> {
+export function loadImage(src: string): Promise<ImageData> {
   return new Promise((resolve, reject) => {
     function onLoad(this: HTMLImageElement) {
       if (this.width === 0 || this.height === 0) {
@@ -28,13 +28,13 @@ export function loadImageData(src: string): Promise<ImageData> {
       canvas.height = this.height;
       ctx.drawImage(this, 0, 0);
 
-      const data = ctx.getImageData(0, 0, this.width, this.height);
+      const img = ctx.getImageData(0, 0, this.width, this.height);
 
       for (let i = 0; i < this.width*this.height; i++) {
-        data.data[4*i + 3] = 0xff;
+        img.data[4*i + 3] = 0xff;
       }
 
-      resolve(data);
+      resolve(img);
     }
 
     const img = document.createElement("img");
