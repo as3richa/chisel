@@ -214,8 +214,8 @@ function carve(
     carvedWidth * carvedHeight,
   );
 
-  const result = new Uint32Array(maxImageSize);
-  result.set(new Uint32Array(state.rgba.buffer), 0);
+  const image = new Uint32Array(maxImageSize);
+  image.set(new Uint32Array(state.rgba.buffer), 0);
 
   const { intens, edges, table, seam, scratch } = (() => {
     const maxSeamSize = Math.max(width, height, carvedWidth, carvedHeight);
@@ -238,39 +238,38 @@ function carve(
     for (let i = 0; i < steps; i++) {
       findVerticalSeam(seam, table, edges, width, height);
 
-      console.log(seam);
-
       if (remove) {
-        [result, intens, edges].forEach(array => {
+        [image, intens, edges].forEach(array => {
           removeVerticalSeam(array, width, height, seam);
         });
-
         width--;
-
-        for (let y = 0; y < height; y++) {
-          const curr = y * width;
-          const prev = Math.max(0, y - 1) * width;
-          const next = Math.min(height - 1, y + 1) * width;
-
-          for (let x = Math.max(0, seam[y] - 2); x <= Math.min(width - 1, seam[y] + 2); x++) {
-            const xl = Math.max(0, x - 1);
-            const xr = Math.min(width - 1, x + 1);
-
-            edges[curr + x] = sobel(
-              intens[prev + xl], intens[prev + x], intens[prev + xr],
-              intens[curr + xl], intens[curr + xr],
-              intens[next + xl], intens[next + x], intens[next + xr],
-            );
-          }
-        }
       } else {
-        [result, intens, edges].forEach(array => {
-          expandVerticalSeam(array, width, height, seam);
+        expandVerticalSeam(image, width, height, seam, expandImageSeam);
+
+        expandVerticalSeam(intens, width, height, seam, (left, middle, right) => {
+          return [(left + middle) / 2, (middle + right) / 2];
         });
 
-        // FIXME
+        expandVerticalSeam(edges, width, height, seam, () => [0, 0]);
 
         width++;
+      }
+
+      for (let y = 0; y < height; y++) {
+        const curr = y * width;
+        const prev = Math.max(0, y - 1) * width;
+        const next = Math.min(height - 1, y + 1) * width;
+
+        for (let x = Math.max(0, seam[y] - 2); x <= Math.min(width - 1, seam[y] + 2); x++) {
+          const xl = Math.max(0, x - 1);
+          const xr = Math.min(width - 1, x + 1);
+
+          edges[curr + x] = sobel(
+            intens[prev + xl], intens[prev + x], intens[prev + xr],
+            intens[curr + xl], intens[curr + xr],
+            intens[next + xl], intens[next + x], intens[next + xr],
+          );
+        }
       }
     }
   };
@@ -278,15 +277,16 @@ function carve(
   carveVertically(Math.abs(width - carvedWidth), width, height, carvedWidth < width);
 
   if (height !== carvedHeight) {
-    [result, intens, edges].forEach(array => {
+    [image, intens, edges].forEach(array => {
       transpose(array, carvedWidth, height, scratch);
     });
     carveVertically(Math.abs(height - carvedHeight), height, carvedWidth, carvedHeight < height);
-    transpose(result, carvedHeight, carvedWidth, scratch);
+    transpose(image, carvedHeight, carvedWidth, scratch);
+    transpose(edges, carvedHeight, carvedWidth, scratch);
   }
 
   return {
-    buffer: result.buffer,
+    buffer: image.buffer,
     width: carvedWidth,
     height: carvedHeight,
   };
@@ -361,13 +361,20 @@ function expandVerticalSeam(
   width: number,
   height: number,
   seam: Uint16Array,
+  values: (left: number, middle: number, right: number) => [number, number],
 ) {
   for (let y = height - 1; y >= 0; y--) {
     const sourceRow = y * width;
-    const destRow = sourceRow + y;
+    const destRow = y * (width + 1);
     const x = seam[y];
-    array.copyWithin(destRow + x + 2, sourceRow + x + 1, width - 1 - x);
-    array.copyWithin(destRow, sourceRow, x);
+
+    const left = array[sourceRow + Math.max(x - 1, 0)];
+    const middle = array[sourceRow + x];
+    const right = array[sourceRow + Math.min(x + 1, width - 1)];
+
+    array.copyWithin(destRow + x + 2, sourceRow + x + 1, sourceRow + width);
+    array.set(values(left, middle, right), destRow + x);
+    array.copyWithin(destRow, sourceRow, sourceRow + x);
   }
 }
 
@@ -378,4 +385,31 @@ function transpose(array: TypedArray, width: number, height: number, scratch: Ty
     }
   }
   array.set(scratch);
+}
+function expandImageSeam(left: number, middle: number, right: number): [number, number] {
+  function bytes(u32: number): Array<number> {
+    return [
+      u32 & 0xff,
+      (u32 >> 8) & 0xff,
+      (u32 >> 16) & 0xff,
+      u32 >> 24,
+    ];
+  }
+
+  function u32(bytes: Array<number>): number {
+    return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
+  }
+
+  function averageBytes(x: Array<number>, y: Array<number>): Array<number> {
+    return x.map((byte, i) => (byte + y[i]) / 2);
+  }
+
+  const leftBytes = bytes(left);
+  const middleBytes = bytes(middle);
+  const rightBytes = bytes(right);
+
+  return [
+    u32(averageBytes(leftBytes, middleBytes)),
+    u32(averageBytes(middleBytes, rightBytes)),
+  ];
 }
