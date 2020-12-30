@@ -42,7 +42,6 @@ export function App(): ReactElement {
     if (imageMeta === null || trans === null) {
       return;
     }
-    console.log([imageMeta, transformImage, trans]);
     transformImage(trans).then(setTransformed);
   }, [trans, imageMeta, transformImage]);
 

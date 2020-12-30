@@ -38,7 +38,7 @@ export function useImageWorker(): WorkerApi {
       }
 
       const { buffer, width, height } = event.data as Response;
-      const data = new Uint8ClampedArray(buffer);
+      const data = new Uint8ClampedArray(buffer, 0, 4 * width * height);
       resolve(new ImageData(data, width, height));
     });
 
