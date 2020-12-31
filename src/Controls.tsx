@@ -38,7 +38,7 @@ export function Controls(props: Props): ReactElement {
 
   let carveControls = null;
 
-  if (trans.command === "carve" || trans.command === "seams") {
+  if (trans.command === "carve") {
     carveControls = (
       <Carve
         imageWidth={imageWidth}
@@ -229,8 +229,8 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
             return;
           }
 
-          if (command === "carve" || command === "seams") {
-            const [width, height] = (trans.command === "carve" || trans.command === "seams")
+          if (command === "carve") {
+            const [width, height] = trans.command === "carve"
               ? [trans.width, trans.height]
               : [imageWidth, imageHeight];
             setTrans({ command, width, height });
