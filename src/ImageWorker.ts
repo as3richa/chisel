@@ -1,12 +1,16 @@
 const ctx = self as unknown as Worker;
 
-import {computeIntensity, detectEdges, carve, toRgba} from "./imageProcessing"
+import { computeIntensity, detectEdges, carveImage, toRgba, highlightSeams } from "./imageProcessing";
 
 export type CarveTransformation =
   { command: "carve", width: number, height: number };
 
+export type HighlightTransformation =
+  { command: "highlight", count: number, axis: "vertical" | "horizontal" };
+
 export type Transformation =
   CarveTransformation |
+  HighlightTransformation |
   { command: "edges" } |
   { command: "intens" } |
   { command: "original" };
@@ -67,14 +71,58 @@ ctx.addEventListener("message", event => {
     }
 
     case "carve": {
+      const {
+        rgba,
+        intens,
+        edges,
+        width,
+        height,
+      } = getState();
+
       const carvedWidth = message.width;
       const carvedHeight = message.height;
 
       ctx.postMessage({
-        buffer: carve(getState(), carvedWidth, carvedHeight),
+        buffer: carveImage(
+          rgba,
+          intens,
+          edges,
+          width,
+          height,
+          carvedWidth,
+          carvedHeight
+        ),
         width: carvedWidth,
         height: carvedHeight,
       });
+      break;
+    }
+
+    case "highlight": {
+      const {
+        rgba,
+        intens,
+        edges,
+        width,
+        height,
+      } = getState();
+
+      const { count, axis } = message;
+
+      ctx.postMessage({
+        buffer: highlightSeams(
+          rgba,
+          intens,
+          edges,
+          width,
+          height,
+          axis,
+          count,
+        ),
+        width,
+        height
+      });
+
       break;
     }
 

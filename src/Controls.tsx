@@ -1,5 +1,5 @@
 import React, { ReactElement } from "react";
-import type { CarveTransformation, Transformation } from "./ImageWorker";
+import type { CarveTransformation, HighlightTransformation, Transformation } from "./ImageWorker";
 
 type Props = {
   errorMessage: string | null,
@@ -36,11 +36,21 @@ export function Controls(props: Props): ReactElement {
     <div style={{ marginBottom: 12, color: "#ff0000" }}>{errorMessage}</div>
   );
 
-  let carveControls = null;
+  let transControls = null;
 
   if (trans.command === "carve") {
-    carveControls = (
+    transControls = (
       <Carve
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        trans={trans}
+        setTrans={setTrans}
+        disabled={false}
+      />
+    );
+  } else if (trans.command === "highlight") {
+    transControls = (
+      <Highlight
         imageWidth={imageWidth}
         imageHeight={imageHeight}
         trans={trans}
@@ -79,7 +89,7 @@ export function Controls(props: Props): ReactElement {
         setTrans={setTrans}
         disabled={false}
       />
-      {carveControls}
+      {transControls}
     </div>
   );
 }
@@ -209,14 +219,14 @@ type CommandSelectProps = {
 function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: CommandSelectProps): ReactElement {
   const options = [
     { value: "carve", memo: "Carve seams" },
-    { value: "seams", memo: "Highlight seams" },
+    { value: "highlight", memo: "Highlight seams" },
     { value: "edges", memo: "Detect edges" },
     { value: "intens", memo: "Compute Intensity" },
     { value: "original", memo: "Show original" },
   ];
 
   return (
-    <div>
+    <label style={{ display: "block" }}>
       <div style={{ marginBottom: 8 }}>Operation:</div>
       <select
         style={{ width: "100%", fontSize: 12, display: "block", marginBottom: 12 }}
@@ -229,21 +239,25 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
             return;
           }
 
-          if (command === "carve") {
-            const [width, height] = trans.command === "carve"
-              ? [trans.width, trans.height]
-              : [imageWidth, imageHeight];
-            setTrans({ command, width, height });
-          } else {
-            if (command !== "edges" && command !== "intens" && command !== "original") {
-              throw new Error("Bad command");
-            }
+          switch (command) {
+          case "carve":
+            setTrans({ command, width: imageWidth, height: imageHeight });
+            break;
+
+          case "highlight":
+            setTrans({ command, count: 0, axis: "vertical" });
+            break;
+
+          case "edges":
+          case "intens":
+          case "original":
             setTrans({ command });
+            break;
           }
         }}>
         {options.map(({ value, memo }) => <option key={value} value={value}>{memo}</option>)}
       </select>
-    </div>
+    </label>
   );
 }
 
@@ -290,6 +304,60 @@ function Carve({ imageWidth, imageHeight, trans, setTrans, disabled }: CarveProp
           });
         }}
       />
+    </div>
+  );
+}
+
+type HighlightProps = {
+  imageWidth: number,
+  imageHeight: number,
+  trans: HighlightTransformation,
+  setTrans: (trans: Transformation) => void,
+  disabled: boolean,
+}
+
+function Highlight({ imageWidth, imageHeight, trans, setTrans, disabled }: HighlightProps): ReactElement {
+  return (
+    <div>
+      <LabeledNumericInput
+        label="Count"
+        value={trans.count}
+        min={0}
+        max={trans.axis === "horizontal" ? imageHeight : imageWidth}
+        def={imageWidth}
+        units="seams"
+        disabled={disabled}
+        onChange={value => {
+          setTrans({
+            command: "highlight",
+            count: value,
+            axis: trans.axis,
+          });
+        }}
+      />
+      <label style={{ display: "block" }}>
+        <div style={{ marginBottom: 8 }}>Axis:</div>
+        <select
+          style={{ width: "100%", fontSize: 12, display: "block" }}
+          value={trans.axis}
+          disabled={disabled}
+          onChange={event => {
+            const axis = event.target.value;
+
+            if (axis === trans.axis) {
+              return;
+            }
+
+            if (axis !== "horizontal" && axis !== "vertical") {
+              return;
+            }
+
+            setTrans({ command: "highlight", axis: axis, count: 0 });
+          }}>
+          <option value={"horizontal"}>Horizontal</option>
+          <option value={"vertical"}>Vertical</option>
+        </select>
+      </label>
     </div>
   );
 }
