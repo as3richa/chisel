@@ -1,5 +1,5 @@
 import React, { ReactElement } from "react";
-import type { CarveTransformation, HighlightTransformation, Transformation } from "./ImageWorker";
+import type { Axis, CarveTransformation, HighlightTransformation, Transformation } from "./ImageWorker";
 
 type Props = {
   errorMessage: string | null,
@@ -55,6 +55,19 @@ export function Controls(props: Props): ReactElement {
         imageHeight={imageHeight}
         trans={trans}
         setTrans={setTrans}
+        disabled={false}
+      />
+    );
+  } else if (trans.command === "gradient") {
+    transControls = (
+      <AxisSelect
+        axis={trans.axis}
+        setAxis={axis => {
+          setTrans({
+            command: "gradient",
+            axis: axis,
+          });
+        }}
         disabled={false}
       />
     );
@@ -220,9 +233,8 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
   const options = [
     { value: "carve", memo: "Carve seams" },
     { value: "highlight", memo: "Highlight seams" },
-    { value: "edges", memo: "Detect edges" },
-    { value: "intens", memo: "Compute Intensity" },
-    { value: "original", memo: "Show original" },
+    { value: "gradient", memo: "Compute gradient" },
+    { value: "intensity", memo: "Compute Intensity" },
   ];
 
   return (
@@ -245,12 +257,14 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
             break;
 
           case "highlight":
-            setTrans({ command, count: 0, axis: "vertical" });
+            setTrans({ command, axis: "horizontal", count: 0 });
             break;
 
-          case "edges":
-          case "intens":
-          case "original":
+          case "gradient":
+            setTrans({ command, axis: "horizontal" });
+            break;
+
+          case "intensity":
             setTrans({ command });
             break;
           }
@@ -319,45 +333,67 @@ type HighlightProps = {
 function Highlight({ imageWidth, imageHeight, trans, setTrans, disabled }: HighlightProps): ReactElement {
   return (
     <div>
+      <AxisSelect
+        axis={trans.axis}
+        setAxis={axis => {
+          setTrans({
+            command: "highlight",
+            axis: axis,
+            count: 0,
+          });
+        }}
+        disabled={disabled}
+      />
       <LabeledNumericInput
         label="Count"
         value={trans.count}
         min={0}
-        max={trans.axis === "horizontal" ? imageHeight : imageWidth}
+        max={trans.axis === "vertical" ? imageWidth : imageHeight}
         def={imageWidth}
         units="seams"
         disabled={disabled}
         onChange={value => {
           setTrans({
             command: "highlight",
-            count: value,
             axis: trans.axis,
+            count: value,
           });
         }}
       />
-      <label style={{ display: "block" }}>
-        <div style={{ marginBottom: 8 }}>Axis:</div>
-        <select
-          style={{ width: "100%", fontSize: 12, display: "block" }}
-          value={trans.axis}
-          disabled={disabled}
-          onChange={event => {
-            const axis = event.target.value;
-
-            if (axis === trans.axis) {
-              return;
-            }
-
-            if (axis !== "horizontal" && axis !== "vertical") {
-              return;
-            }
-
-            setTrans({ command: "highlight", axis: axis, count: 0 });
-          }}>
-          <option value={"horizontal"}>Horizontal</option>
-          <option value={"vertical"}>Vertical</option>
-        </select>
-      </label>
     </div>
+  );
+}
+
+type AxisSelectProps = {
+  axis: Axis,
+  setAxis: (axis: Axis) => void,
+  disabled: boolean,
+};
+
+function AxisSelect({ axis, setAxis, disabled }: AxisSelectProps): ReactElement {
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ marginBottom: 8 }}>Axis:</div>
+      <select
+        style={{ display: "block", width: "100%", fontSize: 12, marginBottom: 12 }}
+        value={axis}
+        disabled={disabled}
+        onChange={event => {
+          const value = event.target.value;
+         
+          if (value === axis) {
+            return;
+          }
+
+          if (value !== "horizontal" && value !== "vertical") {
+            return;
+          }
+
+          setAxis(value);
+        }}>
+        <option value={"horizontal"}>Horizontal</option>
+        <option value={"vertical"}>Vertical</option>
+      </select>
+    </label>
   );
 }

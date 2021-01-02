@@ -1,27 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import ImageWorker from "worker-loader!./ImageWorker.ts";
 import type { Request, Response, Transformation } from "./ImageWorker";
 
 export type WorkerApi = {
-  imageMeta: ImageMeta | null,
-  setImage: (image: ImageData) => void,
-  transformImage: (trans: Transformation) => Promise<ImageData>,
+  transformImage: (image: ImageData, trans: Transformation) => Promise<ImageData>,
 }
 
-export type ImageMeta = {
-  width: number,
-  height: number,
-};
-
 export function useImageWorker(): WorkerApi {
-  const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null);
-
-  const { setImage, transformImage } = useMemo(() => {
+  const transformImage = useMemo(() => {
     const worker = new ImageWorker();
     const outstanding: Array<(image: ImageData) => void> = [];
 
-    const send = (req: Request, transfer?: Array<ArrayBuffer>) => {
-      worker.postMessage(req, transfer || []);
+    const send = (req: Request) => {
+      worker.postMessage(req);
     };
 
     const receive = () => {
@@ -37,30 +28,26 @@ export function useImageWorker(): WorkerApi {
         throw new Error("Received response from worker, but no requests pending");
       }
 
-      const { buffer, width, height } = event.data as Response;
-      const data = new Uint8ClampedArray(buffer, 0, 4 * width * height);
+      const { rgba, width, height } = event.data as Response;
+      const data = new Uint8ClampedArray(rgba, rgba.byteOffset, 4 * width * height);
       resolve(new ImageData(data, width, height));
     });
 
-    const setImage = (image: ImageData) => {
+    const transformImage = (image: ImageData, trans: Transformation) => {
+      const rgba = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.length);
       send({
-        command: "set",
         image: {
-          buffer: image.data.buffer,
+          rgba,
           width: image.width,
           height: image.height,
-        }
-      }, [image.data.buffer]);
-      setImageMeta({ width: image.width, height: image.height });
-    };
-
-    const transformImage = (trans: Transformation) => {
-      send(trans);
+        },
+        trans,
+      });
       return receive();
     };
 
-    return { setImage, transformImage };
+    return transformImage;
   }, []);
 
-  return { imageMeta, setImage, transformImage };
+  return { transformImage };
 }

@@ -1,160 +1,116 @@
 const ctx = self as unknown as Worker;
 
-import { computeIntensity, detectEdges, carveImage, toRgba, highlightSeams } from "./imageProcessing";
+import {
+  carveImage,
+  highlightSeams,
+  horizontalGradientMap,
+  intensityMap,
+  mapToRgba,
+  verticalGradientMap,
+} from "./imageProcessing";
 
-export type CarveTransformation =
-  { command: "carve", width: number, height: number };
+export type Axis = "horizontal" | "vertical";
 
-export type HighlightTransformation =
-  { command: "highlight", count: number, axis: "vertical" | "horizontal" };
+export type CarveTransformation = {
+  command: "carve",
+  width: number,
+  height: number,
+};
+
+export type HighlightTransformation = {
+  command: "highlight",
+  axis: Axis,
+  count: number,
+};
+
+export type GradientTransformation = {
+  command: "gradient",
+  axis: Axis,
+};
+
+export type IntensityTransformation = { command: "intensity" };
 
 export type Transformation =
   CarveTransformation |
   HighlightTransformation |
-  { command: "edges" } |
-  { command: "intens" } |
-  { command: "original" };
+  GradientTransformation |
+  IntensityTransformation;
 
-export type Request =
-  Transformation |
-  { command: "set", image: TransferableImageData };
+export type TransferableImageData = {
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+};
+
+export type Request = {
+  image: TransferableImageData,
+  trans: Transformation,
+};
 
 export type Response = TransferableImageData;
 
-export type TransferableImageData = {
-  buffer: ArrayBuffer,
-  width: number,
-  height: number,
-};
-
-type ImageState = {
-  rgba: Uint8Array,
-  intens: Uint8Array,
-  edges: Uint16Array,
-  width: number,
-  height: number,
-};
-
-let state: ImageState | null = null;
-
-const getState = () => {
-  if (state === null) {
-    throw new Error("Image state not set");
-  }
-  return state;
-};
-
-function stopwatch(memo: string, f: () => void) {
-  const startedAt = performance.now();
-  f();
-  console.log(`${memo}: ${performance.now() - startedAt}ms`);
+function sendImage(rgba: Uint8Array, width: number, height: number) {
+  ctx.postMessage({
+    rgba: rgba,
+    width,
+    height
+  }, [rgba.buffer]);
 }
 
 ctx.addEventListener("message", event => {
   const message = event.data as Request;
 
-  stopwatch(message.command, () => {
-    switch (message.command) {
-    case "set": {
-      const { buffer, width, height } = message.image;
-      const rgba = new Uint8Array(buffer);
-      const intens = computeIntensity(rgba, width, height);
-      const edges = detectEdges(intens, width, height);
-      state = {
-        rgba,
-        intens,
-        edges,
-        width,
-        height
-      };
-      break;
-    }
+  const { rgba, width, height } = message.image;
 
-    case "carve": {
-      const {
-        rgba,
-        intens,
-        edges,
-        width,
-        height,
-      } = getState();
+  const startedAt = performance.now();
+  let memo = `${message.trans.command} ${width}x${height}`;
 
-      const carvedWidth = message.width;
-      const carvedHeight = message.height;
+  switch (message.trans.command) {
+  case "carve": {
+    const { width: carvedWidth, height: carvedHeight } = message.trans;
+    memo += ` -> ${carvedWidth}x${carvedHeight}`;
+    const carved = carveImage(
+      rgba,
+      width,
+      height,
+      carvedWidth,
+      carvedHeight
+    );
+    sendImage(carved, carvedWidth, carvedHeight);
+    break;
+  }
 
-      ctx.postMessage({
-        buffer: carveImage(
-          rgba,
-          intens,
-          edges,
-          width,
-          height,
-          carvedWidth,
-          carvedHeight
-        ),
-        width: carvedWidth,
-        height: carvedHeight,
-      });
-      break;
-    }
+  case "highlight": {
+    const { axis, count } = message.trans;
+    memo += ` ${count} ${axis}`;
+    const highlighted = highlightSeams(
+      rgba,
+      width,
+      height,
+      axis === "vertical",
+      count,
+    );
+    sendImage(highlighted, width, height);
+    break;
+  }
 
-    case "highlight": {
-      const {
-        rgba,
-        intens,
-        edges,
-        width,
-        height,
-      } = getState();
+  case "gradient": {
+    const { axis } = message.trans;
+    memo += ` ${axis}`;
+    const intens = intensityMap(rgba, width, height);
+    const grad = (axis === "vertical")
+      ? verticalGradientMap(intens, width, height)
+      : horizontalGradientMap(intens, width, height);
+    sendImage(mapToRgba(grad, width * height), width, height);
+    break;
+  }
 
-      const { count, axis } = message;
+  case "intensity": {
+    const intens = intensityMap(rgba, width, height);
+    sendImage(mapToRgba(intens, width * height), width, height);
+    break;
+  }
+  }
 
-      ctx.postMessage({
-        buffer: highlightSeams(
-          rgba,
-          intens,
-          edges,
-          width,
-          height,
-          axis,
-          count,
-        ),
-        width,
-        height
-      });
-
-      break;
-    }
-
-    case "edges": {
-      const { edges, width, height } = getState();
-      ctx.postMessage({
-        buffer: toRgba(edges),
-        width,
-        height,
-      });
-      break;
-    }
-
-    case "intens": {
-      const { intens, width, height } = getState();
-      ctx.postMessage({
-        buffer: toRgba(intens),
-        width,
-        height,
-      });
-      break;
-    }
-
-    case "original": {
-      const { rgba, width, height } = getState();
-      ctx.postMessage({
-        buffer: rgba,
-        width,
-        height,
-      });
-      break;
-    }
-    }
-  });
+  console.log(`${memo}: ${performance.now() - startedAt}ms`);
 });

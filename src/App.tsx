@@ -17,13 +17,13 @@ export function App(): ReactElement {
 
   const viewport = useViewportSize();
 
+  const [image, setImage] = useState<ImageData | null>(null);
   const [trans, setTrans] = useState<Transformation | null>(null);
-
   const [transformed, setTransformed] = useState<ImageData | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { imageMeta, setImage, transformImage } = useImageWorker();
+  const { transformImage } = useImageWorker();
 
   const loadImage = useCallback((src: string) => {
     setTrans(null);
@@ -39,11 +39,11 @@ export function App(): ReactElement {
   useEffect(() => { loadImage("the-persistence-of-memory.jpg"); }, [loadImage]);
 
   useEffect(() => {
-    if (imageMeta === null || trans === null) {
+    if (image === null || trans === null) {
       return;
     }
-    transformImage(trans).then(setTransformed);
-  }, [trans, imageMeta, transformImage]);
+    transformImage(image, trans).then(setTransformed);
+  }, [image, trans, transformImage]);
 
   useEffect(() => {
     if (!fit || transformed === null) {
@@ -89,8 +89,8 @@ export function App(): ReactElement {
           setScale={setScale}
           fit={fit}
           setFit={setFit}
-          imageWidth={imageMeta === null ? 1 : imageMeta.width}
-          imageHeight={imageMeta === null ? 1 : imageMeta.height}
+          imageWidth={image === null ? 1 : image.width}
+          imageHeight={image === null ? 1 : image.height}
           trans={trans !== null ? trans : placeholderTrans}
           setTrans={setTrans}
           uploadFile={file => {
