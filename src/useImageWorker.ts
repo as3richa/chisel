@@ -8,8 +8,8 @@ export type Transformation =
 
 export type Api = {
   transformImage: (image: ImageData, trans: Transformation) => Promise<ImageData | null>,
-  pending: boolean,
-  cancelPending: () => void,
+  transformationPending: boolean,
+  cancelPendingTransformations: () => void,
 };
 
 type Resolve = (transformed: ImageData | null) => void;
@@ -78,7 +78,7 @@ export function useImageWorker(): Api {
     });
   }, []);
 
-  const cancelPending = useCallback(() => {
+  const cancelPendingTransformations = useCallback(() => {
     setQueued(queued => {
       if (queued !== null) {
         queued.resolve(null);
@@ -89,14 +89,15 @@ export function useImageWorker(): Api {
     setPending((pending: Resolve | null) => {
       if (pending !== null) {
         pending(null);
+        return () => { /**/ };
       }
-      return () => { /**/ };
+      return null;
     });
   }, []);
 
   return {
     transformImage,
-    pending: queued !== null || pending !== null,
-    cancelPending,
+    transformationPending: queued !== null || pending !== null,
+    cancelPendingTransformations,
   };
 }

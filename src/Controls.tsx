@@ -1,79 +1,152 @@
-import React, { ReactElement } from "react";
+import React, { ReactElement, ReactNode, useEffect, useState } from "react";
 import type { Axis, CarveTransformation, HighlightTransformation } from "./ImageWorker";
 import type { Transformation } from "./useImageWorker";
 
+import expandIcon from "./icons/expand.png";
+import collapseIcon from "./icons/collapse.png";
+import loadingIcon from "./icons/loading.png";
+import doneIcon from "./icons/done.png";
+
 type Props = {
+  loading: boolean,
   errorMessage: string | null,
+  uploadFile: (file: File) => void,
+  uploadDisabled: boolean,
   scale: number,
   minScale: number,
   maxScale: number,
   setScale: (scale: number) => void,
   fit: boolean,
   setFit: (fit: boolean) => void,
+  scaleDisabled: boolean,
   imageWidth: number,
   imageHeight: number,
-  trans: Transformation,
-  setTrans: (trans: Transformation) => void,
-  uploadFile: (file: File) => void,
+  transformation: Transformation,
+  setTransformation: (transformation: Transformation) => void,
+  transformationDisabled: boolean,
 };
 
 export function Controls(props: Props): ReactElement {
   const {
+    loading,
     errorMessage,
+    uploadFile,
+    uploadDisabled,
     scale,
     minScale,
     maxScale,
     setScale,
     fit,
     setFit,
-    trans,
-    setTrans,
+    scaleDisabled,
+    transformation,
+    setTransformation: setTransformation,
+    transformationDisabled,
     imageWidth,
     imageHeight,
-    uploadFile,
   } = props;
+
+  const [collapsed, setCollapsed] = useState(false);
+
+  const icons = (
+    <div style={{ textAlign: "right" }}>
+      <img
+        width={15}
+        height={15}
+        src={loading ? loadingIcon : doneIcon}
+      />
+      <img
+        width={15}
+        height={15}
+        src={collapsed ? expandIcon : collapseIcon}
+        style={{ marginLeft: 8, cursor: "pointer" }}
+        onClick={() => setCollapsed(!collapsed)}
+      />
+    </div>
+  );
 
   const errorBanner = errorMessage && (
     <div style={{ marginBottom: 12, color: "#ff0000" }}>{errorMessage}</div>
   );
 
-  let transControls = null;
+  if (collapsed) {
+    return (
+      <Container width={65}>
+        {icons}
+        {errorBanner}
+      </Container>
+    );
+  }
 
-  if (trans.command === "carve") {
-    transControls = (
+  let transformationControls = null;
+
+  if (transformation.command === "carve") {
+    transformationControls = (
       <Carve
         imageWidth={imageWidth}
         imageHeight={imageHeight}
-        trans={trans}
-        setTrans={setTrans}
-        disabled={false}
+        transformation={transformation}
+        setTransformation={setTransformation}
+        disabled={transformationDisabled}
       />
     );
-  } else if (trans.command === "highlight") {
-    transControls = (
+  } else if (transformation.command === "highlight") {
+    transformationControls = (
       <Highlight
         imageWidth={imageWidth}
         imageHeight={imageHeight}
-        trans={trans}
-        setTrans={setTrans}
-        disabled={false}
+        transformation={transformation}
+        setTransformation={setTransformation}
+        disabled={transformationDisabled}
       />
     );
-  } else if (trans.command === "gradient") {
-    transControls = (
+  } else if (transformation.command === "gradient") {
+    transformationControls = (
       <AxisSelect
-        axis={trans.axis}
+        axis={transformation.axis}
         setAxis={axis => {
-          setTrans({
+          setTransformation({
             command: "gradient",
             axis: axis,
           });
         }}
-        disabled={false}
+        disabled={transformationDisabled}
       />
     );
   }
 
+  return (
+    <Container width={200}>
+      {icons}
+      {errorBanner}
+      <UploadInput uploadFile={uploadFile} disabled={uploadDisabled} />
+      <Scale
+        scale={scale}
+        min={minScale}
+        max={maxScale}
+        setScale={setScale}
+        fit={fit}
+        setFit={setFit}
+        disabled={scaleDisabled}
+      />
+      <CommandSelect
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        transformation={transformation}
+        setTransformation={setTransformation}
+        disabled={transformationDisabled}
+      />
+      {transformationControls}
+    </Container>
+  );
+}
+
+type ContainerProps = {
+  width: number,
+  children: ReactNode,
+};
+
+function Container({ children, width }: ContainerProps): ReactElement {
   return (
     <div
       style={{
@@ -82,28 +155,10 @@ export function Controls(props: Props): ReactElement {
         padding: "12px",
         color: "#333",
         backgroundColor: "#eee",
-        width: 200,
+        width,
         fontSize: 12
       }}>
-      {errorBanner}
-      <UploadInput uploadFile={uploadFile} />
-      <Scale
-        scale={scale}
-        min={minScale}
-        max={maxScale}
-        setScale={setScale}
-        fit={fit}
-        setFit={setFit}
-        disabled={false}
-      />
-      <CommandSelect
-        imageWidth={imageWidth}
-        imageHeight={imageHeight}
-        trans={trans}
-        setTrans={setTrans}
-        disabled={false}
-      />
-      {transControls}
+      {children}
     </div>
   );
 }
@@ -113,26 +168,31 @@ type LabeledNumericInputProps = {
   value: number,
   min: number,
   max: number,
-  def: number
   units: string,
   disabled: boolean,
   onChange: (value: number) => void,
 }
 
 function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
-  const { label, value, min, max, def, units, disabled, onChange } = props;
+  const { label, value, min, max, units, disabled, onChange } = props;
 
-  function handleEvent(event: React.ChangeEvent<HTMLInputElement>) {
-    let value = parseInt(event.target.value);
-    if (isNaN(value)) {
-      value = def;
-    } else if (value < min) {
-      value = min;
-    } else if (value > max) {
-      value = max;
+  const [stringValue, setStringValue] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStringValue(null);
+  }, [value]);
+
+  useEffect(() => {
+    if (stringValue === null) {
+      return;
     }
-    onChange(value);
-  }
+
+    const value = parseInt(stringValue);
+
+    if (!isNaN(value) && min <= value && value <= max) {
+      onChange(value);
+    }
+  }, [stringValue, max, min, onChange]);
 
   return (
     <div>
@@ -141,10 +201,10 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
         <input
           type="number"
           style={{ fontSize: 12, width: 80 }}
-          value={value}
+          value={stringValue || value}
           min={min}
           max={max}
-          onChange={handleEvent}
+          onChange={event => setStringValue(event.target.value)}
           disabled={disabled} />
         {" "}{units}
       </div>
@@ -154,7 +214,7 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
         value={value}
         min={min}
         max={max}
-        onChange={handleEvent}
+        onChange={event => setStringValue(event.target.value)}
         disabled={disabled} />
     </div>
   );
@@ -162,15 +222,17 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
 
 type UploadInputProps = {
   uploadFile: (file: File) => void,
+  disabled: boolean,
 };
 
-function UploadInput({ uploadFile }: UploadInputProps): ReactElement {
+function UploadInput({ uploadFile, disabled }: UploadInputProps): ReactElement {
   return (
     <label style={{
       display: "block",
-      cursor: "pointer",
+      cursor: disabled ? "default" : "pointer",
+      color: disabled ? "darkgray" : "inherit",
       textDecoration: "underline",
-      marginBottom: 12
+      marginBottom: 12,
     }}>
       <input
         type="file"
@@ -182,6 +244,7 @@ function UploadInput({ uploadFile }: UploadInputProps): ReactElement {
             uploadFile(file);
           }
         }}
+        disabled={disabled}
       />
     Upload image...
     </label>
@@ -206,8 +269,10 @@ function Scale({ scale, min, max, setScale, fit, setFit, disabled }: ScaleProps)
         value={Math.round(100 * scale)}
         min={Math.round(100 * min)}
         max={Math.round(100 * max)}
-        def={100}
         onChange={value => {
+          if (Math.abs(value / 100 - scale) <= 1e-3) {
+            return;
+          }
           setFit(false);
           setScale(value / 100);
         }}
@@ -215,7 +280,11 @@ function Scale({ scale, min, max, setScale, fit, setFit, disabled }: ScaleProps)
         disabled={disabled}
       />
       <label style={{ display: "block" }}>
-        <input type="checkbox" checked={fit} onChange={event => setFit(event.target.checked)} />
+        <input
+          type="checkbox"
+          checked={fit} onChange={event => setFit(event.target.checked)}
+          disabled={disabled}
+        />
         <span style={{ marginLeft: 4, verticalAlign: 3 }}>Fit to viewport</span>
       </label>
     </div>
@@ -225,18 +294,18 @@ function Scale({ scale, min, max, setScale, fit, setFit, disabled }: ScaleProps)
 type CommandSelectProps = {
   imageWidth: number,
   imageHeight: number,
-  trans: Transformation,
-  setTrans: (trans: Transformation) => void,
+  transformation: Transformation,
+  setTransformation: (transformation: Transformation) => void,
   disabled: boolean,
 };
 
-function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: CommandSelectProps): ReactElement {
+function CommandSelect({ imageWidth, imageHeight, transformation, setTransformation, disabled }: CommandSelectProps): ReactElement {
   const options = [
     { value: "carve", memo: "Carve seams" },
     { value: "highlight", memo: "Highlight seams" },
     { value: "gradient", memo: "Compute gradient" },
     { value: "intensity", memo: "Compute Intensity" },
-    { value: "original", memo: "Show original"}
+    { value: "original", memo: "Show original" }
   ];
 
   return (
@@ -244,34 +313,32 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
       <div style={{ marginBottom: 8 }}>Operation:</div>
       <select
         style={{ width: "100%", fontSize: 12, display: "block", marginBottom: 12 }}
-        value={trans.command}
+        value={transformation.command}
         disabled={disabled}
         onChange={event => {
           const command = event.target.value;
 
-          if (command === trans.command) {
+          if (command === transformation.command) {
             return;
           }
 
           switch (command) {
           case "carve":
-            setTrans({ command, width: imageWidth, height: imageHeight });
+            setTransformation({ command, width: imageWidth, height: imageHeight });
             break;
 
           case "highlight":
-            setTrans({ command, axis: "horizontal", count: 0 });
+            setTransformation({ command, axis: "horizontal", count: 0 });
             break;
 
           case "gradient":
-            setTrans({ command, axis: "horizontal" });
+            setTransformation({ command, axis: "horizontal" });
             break;
 
           case "intensity":
-            setTrans({ command });
-            break;
-
           case "original":
-            setTrans({ command });
+            setTransformation({ command });
+            break;
           }
         }}>
         {options.map(({ value, memo }) => <option key={value} value={value}>{memo}</option>)}
@@ -283,46 +350,57 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
 type CarveProps = {
   imageWidth: number,
   imageHeight: number,
-  trans: CarveTransformation,
-  setTrans: (trans: Transformation) => void,
+  transformation: CarveTransformation,
+  setTransformation: (transformation: Transformation) => void,
   disabled: boolean,
 }
 
-function Carve({ imageWidth, imageHeight, trans, setTrans, disabled }: CarveProps): ReactElement {
+function Carve({ imageWidth, imageHeight, transformation, setTransformation, disabled }: CarveProps): ReactElement {
   return (
     <div>
       <LabeledNumericInput
         label="Width"
-        value={trans.width}
+        value={transformation.width}
         min={1}
         max={2 * imageWidth}
-        def={imageWidth}
         units="pixels"
         disabled={disabled}
         onChange={value => {
-          setTrans({
-            command: trans.command,
+          setTransformation({
+            command: "carve",
             width: value,
-            height: trans.height,
+            height: transformation.height,
           });
         }}
       />
       <LabeledNumericInput
         label="Height"
-        value={trans.height}
+        value={transformation.height}
         min={1}
         max={2 * imageHeight}
-        def={imageHeight}
         units="pixels"
         disabled={disabled}
         onChange={value => {
-          setTrans({
-            command: trans.command,
-            width: trans.width,
+          setTransformation({
+            command: "carve",
+            width: transformation.width,
             height: value,
           });
         }}
       />
+      <button
+        style={{ fontSize: 12, width: "100%" }}
+        onClick={() => {
+          setTransformation({
+            command: transformation.command,
+            width: imageWidth,
+            height: imageHeight,
+          });
+        }}
+        disabled={disabled}
+      >
+        Reset dimensions
+      </button>
     </div>
   );
 }
@@ -330,18 +408,26 @@ function Carve({ imageWidth, imageHeight, trans, setTrans, disabled }: CarveProp
 type HighlightProps = {
   imageWidth: number,
   imageHeight: number,
-  trans: HighlightTransformation,
-  setTrans: (trans: Transformation) => void,
+  transformation: HighlightTransformation,
+  setTransformation: (transformation: Transformation) => void,
   disabled: boolean,
 }
 
-function Highlight({ imageWidth, imageHeight, trans, setTrans, disabled }: HighlightProps): ReactElement {
+function Highlight(props: HighlightProps): ReactElement {
+  const {
+    imageWidth,
+    imageHeight,
+    transformation,
+    setTransformation,
+    disabled,
+  } = props;
+
   return (
     <div>
       <AxisSelect
-        axis={trans.axis}
+        axis={transformation.axis}
         setAxis={axis => {
-          setTrans({
+          setTransformation({
             command: "highlight",
             axis: axis,
             count: 0,
@@ -351,16 +437,15 @@ function Highlight({ imageWidth, imageHeight, trans, setTrans, disabled }: Highl
       />
       <LabeledNumericInput
         label="Count"
-        value={trans.count}
+        value={transformation.count}
         min={0}
-        max={trans.axis === "vertical" ? imageWidth : imageHeight}
-        def={imageWidth}
+        max={transformation.axis === "vertical" ? imageWidth : imageHeight}
         units="seams"
         disabled={disabled}
         onChange={value => {
-          setTrans({
+          setTransformation({
             command: "highlight",
-            axis: trans.axis,
+            axis: transformation.axis,
             count: value,
           });
         }}
@@ -385,7 +470,7 @@ function AxisSelect({ axis, setAxis, disabled }: AxisSelectProps): ReactElement 
         disabled={disabled}
         onChange={event => {
           const value = event.target.value;
-         
+
           if (value === axis) {
             return;
           }

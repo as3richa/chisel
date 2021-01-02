@@ -5,6 +5,8 @@ import { useViewportSize } from "./useViewportSize";
 import { ImageDataCanvas } from "./ImageDataCanvas";
 import { useImageWorker, Transformation } from "./useImageWorker";
 
+import dali from "./dali.jpg";
+
 const minScale = 0.05;
 const maxScale = 2;
 
@@ -15,8 +17,9 @@ export function App(): ReactElement {
   const viewport = useViewportSize();
 
   const [image, setImage] = useState<ImageData | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
-  const [trans, setTrans] = useState<Transformation>({
+  const [transformation, setTransformation] = useState<Transformation>({
     command: "carve",
     width: 1,
     height: 1
@@ -26,21 +29,39 @@ export function App(): ReactElement {
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { transformImage } = useImageWorker();
+  const {
+    transformImage,
+    transformationPending,
+    cancelPendingTransformations
+  } = useImageWorker();
 
   const loadImage = useCallback((src: string) => {
+    cancelPendingTransformations();
     setImage(null);
+    setImageLoading(true);
+    setErrorMessage(null);
+    setScale(1);
+    setTransformation({
+      command: "carve",
+      width: 1,
+      height: 1,
+    });
 
     return loadImageData(src)
       .then(image => {
-        setScale(1);
-        setTrans({ command: "carve", width: image.width, height: image.height });
+        setTransformation({
+          command: "carve",
+          width: image.width,
+          height: image.height
+        });
         setImage(image);
       })
-      .catch(err => { setErrorMessage(err.message || "Oops!"); });
-  }, []);
+      .catch(err => { setErrorMessage(err.message || "Oops!"); })
+      .finally(() => setImageLoading(false));
+      
+  }, [cancelPendingTransformations]);
 
-  useEffect(() => { loadImage("the-persistence-of-memory.jpg"); }, [loadImage]);
+  useEffect(() => { loadImage(dali); }, [loadImage]);
 
   useEffect(() => {
     if (image === null) {
@@ -48,13 +69,13 @@ export function App(): ReactElement {
       return;
     }
 
-    transformImage(image, trans).then(result => {
+    transformImage(image, transformation).then(result => {
       if (result === null) {
         return;
       }
       setTransformedImage(result);
     });
-  }, [image, trans, transformImage]);
+  }, [image, transformation, transformImage]);
 
   useEffect(() => {
     if (!fit || transformedImage === null) {
@@ -93,21 +114,25 @@ export function App(): ReactElement {
       {transformedImage && <ImageDataCanvas data={transformedImage} style={canvasStyle} />}
       <div style={{ position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16 }}>
         <Controls
+          loading={imageLoading || transformationPending}
           errorMessage={errorMessage}
+          uploadFile={file => {
+            const url = URL.createObjectURL(file);
+            loadImage(url).then(() => URL.revokeObjectURL(url));
+          }}
+          uploadDisabled={imageLoading}
           scale={scale}
           minScale={minScale}
           maxScale={maxScale}
           setScale={setScale}
           fit={fit}
           setFit={setFit}
+          scaleDisabled={image === null}
           imageWidth={image === null ? 1 : image.width}
           imageHeight={image === null ? 1 : image.height}
-          trans={trans}
-          setTrans={setTrans}
-          uploadFile={file => {
-            const url = URL.createObjectURL(file);
-            loadImage(url).then(() => URL.revokeObjectURL(url));
-          }}
+          transformation={transformation}
+          setTransformation={setTransformation}
+          transformationDisabled={image === null}
         />
       </div>
     </div>
