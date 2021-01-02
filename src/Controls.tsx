@@ -1,5 +1,6 @@
 import React, { ReactElement } from "react";
-import type { Axis, CarveTransformation, HighlightTransformation, Transformation } from "./ImageWorker";
+import type { Axis, CarveTransformation, HighlightTransformation } from "./ImageWorker";
+import type { Transformation } from "./useImageWorker";
 
 type Props = {
   errorMessage: string | null,
@@ -235,6 +236,7 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
     { value: "highlight", memo: "Highlight seams" },
     { value: "gradient", memo: "Compute gradient" },
     { value: "intensity", memo: "Compute Intensity" },
+    { value: "original", memo: "Show original"}
   ];
 
   return (
@@ -267,6 +269,9 @@ function CommandSelect({ imageWidth, imageHeight, trans, setTrans, disabled }: C
           case "intensity":
             setTrans({ command });
             break;
+
+          case "original":
+            setTrans({ command });
           }
         }}>
         {options.map(({ value, memo }) => <option key={value} value={value}>{memo}</option>)}

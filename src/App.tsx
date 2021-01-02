@@ -3,10 +3,7 @@ import { Controls } from "./Controls";
 import { loadImage as loadImageData } from "./loadImage";
 import { useViewportSize } from "./useViewportSize";
 import { ImageDataCanvas } from "./ImageDataCanvas";
-import { useImageWorker } from "./useImageWorker";
-import type { Transformation } from "./ImageWorker";
-
-const placeholderTrans: Transformation = { command: "carve", width: 1, height: 1 };
+import { useImageWorker, Transformation } from "./useImageWorker";
 
 const minScale = 0.05;
 const maxScale = 2;
@@ -18,53 +15,67 @@ export function App(): ReactElement {
   const viewport = useViewportSize();
 
   const [image, setImage] = useState<ImageData | null>(null);
-  const [trans, setTrans] = useState<Transformation | null>(null);
-  const [transformed, setTransformed] = useState<ImageData | null>(null);
+
+  const [trans, setTrans] = useState<Transformation>({
+    command: "carve",
+    width: 1,
+    height: 1
+  });
+
+  const [transformedImage, setTransformedImage] = useState<ImageData | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { transformImage } = useImageWorker();
 
   const loadImage = useCallback((src: string) => {
-    setTrans(null);
+    setImage(null);
 
     return loadImageData(src)
       .then(image => {
-        setImage(image);
+        setScale(1);
         setTrans({ command: "carve", width: image.width, height: image.height });
+        setImage(image);
       })
       .catch(err => { setErrorMessage(err.message || "Oops!"); });
-  }, [setImage]);
+  }, []);
 
   useEffect(() => { loadImage("the-persistence-of-memory.jpg"); }, [loadImage]);
 
   useEffect(() => {
-    if (image === null || trans === null) {
+    if (image === null) {
+      setTransformedImage(null);
       return;
     }
-    transformImage(image, trans).then(setTransformed);
+
+    transformImage(image, trans).then(result => {
+      if (result === null) {
+        return;
+      }
+      setTransformedImage(result);
+    });
   }, [image, trans, transformImage]);
 
   useEffect(() => {
-    if (!fit || transformed === null) {
+    if (!fit || transformedImage === null) {
       return;
     }
 
     const scale = 0.85 * Math.min(
-      viewport.width / transformed.width,
-      viewport.height / transformed.height,
+      viewport.width / transformedImage.width,
+      viewport.height / transformedImage.height,
     );
 
     setScale(Math.min(maxScale, Math.max(minScale, scale)));
-  }, [fit, viewport, transformed]);
+  }, [fit, viewport, transformedImage]);
 
   const canvasStyle: CSSProperties = useMemo(() => {
-    if (transformed === null) {
+    if (transformedImage === null) {
       return {};
     }
 
-    const width = Math.round(scale * transformed.width);
-    const height = Math.round(scale * transformed.height);
+    const width = Math.round(scale * transformedImage.width);
+    const height = Math.round(scale * transformedImage.height);
     const left = width < viewport.width ? (viewport.width - width) / 2 : 0;
     const top = height < viewport.height ? (viewport.height - height) / 2 : 0;
 
@@ -75,11 +86,11 @@ export function App(): ReactElement {
       left,
       top,
     };
-  }, [scale, viewport, transformed]);
+  }, [scale, viewport, transformedImage]);
 
   return (
     <div>
-      {transformed && <ImageDataCanvas data={transformed} style={canvasStyle} />}
+      {transformedImage && <ImageDataCanvas data={transformedImage} style={canvasStyle} />}
       <div style={{ position: "fixed", top: 16, right: 16, marginLeft: 16, marginBottom: 16 }}>
         <Controls
           errorMessage={errorMessage}
@@ -91,7 +102,7 @@ export function App(): ReactElement {
           setFit={setFit}
           imageWidth={image === null ? 1 : image.width}
           imageHeight={image === null ? 1 : image.height}
-          trans={trans !== null ? trans : placeholderTrans}
+          trans={trans}
           setTrans={setTrans}
           uploadFile={file => {
             const url = URL.createObjectURL(file);
