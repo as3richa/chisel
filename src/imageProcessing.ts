@@ -4,9 +4,9 @@ export function mapToRgba(map: Uint8Array | Uint16Array, length: number): Uint8A
   const rgba = new Uint8Array(4 * length);
 
   for (let i = 0; i < length; i++) {
-    const byte = Math.max(0, Math.min(255, map[i]));
+    const byte = Math.max(0, Math.min(0xff, map[i]));
     rgba[4 * i] = rgba[4 * i + 1] = rgba[4 * i + 2] = byte;
-    rgba[4 * i + 3] = 255;
+    rgba[4 * i + 3] = 0xff;
   }
 
   return rgba;
@@ -35,20 +35,24 @@ export function horizontalGradientMap(intens: Uint8Array, width: number, height:
 
 function horizontalGradientMapToArray(grad: Uint16Array, intens: Uint8Array, width: number, height: number) {
   for (let y = 0; y < height; y++) {
-    const curr = y * width;
-    const prev = (y === 0) ? 0 : (curr - width);
-    const next = (y === height - 1) ? curr : (curr + width);
+    horizontalGradientRowToArray(grad, intens, width, height, y, 0, width - 1);
+  }
+}
 
-    for (let x = 0; x < width; x++) {
-      const xl = Math.max(0, x - 1);
-      const xr = Math.min(width - 1, x + 1);
+function horizontalGradientRowToArray(grad: Uint16Array, intens: Uint8Array, width: number, height: number, y: number, left: number, right: number) {
+  const curr = y * width;
+  const prev = (y == 0) ? curr : (curr - width);
+  const next = (y == height - 1) ? curr : (curr + width);
 
-      grad[curr + x] = horizontalGradient(
-        intens[prev + xl], intens[prev + xr],
-        intens[curr + xl], intens[curr + xr],
-        intens[next + xl], intens[next + xr],
-      );
-    }
+  for (let x = left; x <= right; x++) {
+    const xl = Math.max(0, x - 1);
+    const xr = Math.min(width - 1, x + 1);
+
+    grad[curr + x] = horizontalGradient(
+      intens[prev + xl], intens[prev + xr],
+      intens[curr + xl], intens[curr + xr],
+      intens[next + xl], intens[next + xr],
+    );
   }
 }
 
@@ -69,7 +73,7 @@ export function verticalGradientMap(intens: Uint8Array, width: number, height: n
       const xr = Math.min(width - 1, x + 1);
 
       grad[curr + x] = verticalGradient(
-        intens[prev + xl], intens[prev + x], intens[prev + xr], 
+        intens[prev + xl], intens[prev + x], intens[prev + xr],
         intens[next + xl], intens[next + x], intens[next + xr],
       );
     }
@@ -134,7 +138,7 @@ export function carveImage(
       ? scratch32
       : result;
 
-    let w = 0;
+    let offset = 0;
 
     for (let y = 0; y < height; y++) {
       const row = y * width;
@@ -145,8 +149,8 @@ export function carveImage(
       let prev = 0;
 
       const copySegment = (begin: number, end: number) => {
-        out.set(image.subarray(row + begin, row + end), w);
-        w += end - begin;
+        out.set(image.subarray(row + begin, row + end), offset);
+        offset += end - begin;
       };
 
       xs.forEach(x => {
@@ -155,8 +159,8 @@ export function carveImage(
         if (!remove) {
           const xl = Math.max(0, x - 1);
           const xr = Math.min(width - 1, x + 1);
-          out[w++] = rgbaAverage(image[row + xl], image[row + x]);
-          out[w++] = rgbaAverage(image[row + x], image[row + xr]);
+          out[offset++] = rgbaAverage(image[row + xl], image[row + x]);
+          out[offset++] = rgbaAverage(image[row + x], image[row + xr]);
         }
 
         prev = x + 1;
@@ -166,7 +170,7 @@ export function carveImage(
     }
 
     if (out !== result) {
-      result.set(out.subarray(0, w));
+      result.set(out.subarray(0, offset));
     }
   };
 
@@ -314,20 +318,16 @@ function findAndRemoveVerticalSeams(
     width--;
 
     for (let y = 0; y < height; y++) {
-      const curr = y * width;
-      const prev = (y == 0) ? curr : (curr - width);
-      const next = (y == height - 1) ? curr : (curr + width);
-
-      for (let x = Math.max(0, seam[y] - 2); x <= Math.min(width - 1, seam[y] + 2); x++) {
-        const xl = Math.max(0, x - 1);
-        const xr = Math.min(width - 1, x + 1);
-
-        grad[curr + x] = horizontalGradient(
-          intens[prev + xl], intens[prev + xr],
-          intens[curr + xl], intens[curr + xr],
-          intens[next + xl], intens[next + xr],
-        );
-      }
+      const x = seam[y];
+      horizontalGradientRowToArray(
+        grad,
+        intens,
+        width,
+        height,
+        y,
+        Math.max(0, x - 2),
+        Math.max(width - 1, x + 2)
+      );
     }
   }
 
@@ -405,11 +405,11 @@ function findVerticalSeam(
 
 function removeVerticalSeam(array: TypedArray, width: number, height: number, seam: Uint16Array) {
   for (let y = 0; y < height; y++) {
-    const sourceRow = y * width;
-    const destRow = y * (width - 1);
+    const source = y * width;
+    const dest = y * (width - 1);
     const x = seam[y];
-    array.copyWithin(destRow, sourceRow, sourceRow + x);
-    array.copyWithin(destRow + x, sourceRow + x + 1, sourceRow + width);
+    array.copyWithin(dest, source, source + x);
+    array.copyWithin(dest + x, source + x + 1, source + width);
   }
 }
 
