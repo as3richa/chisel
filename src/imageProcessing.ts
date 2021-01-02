@@ -1,10 +1,10 @@
 type TypedArray = Uint8Array | Uint16Array | Uint32Array;
 
-export function toRgba(plane: Uint8Array | Uint16Array): ArrayBuffer {
-  const rgba = new Uint8ClampedArray(4 * plane.length);
+export function toRgba(image: Uint8Array | Uint16Array): ArrayBuffer {
+  const rgba = new Uint8ClampedArray(4 * image.length);
 
-  for (let i = 0; i < plane.length; i++) {
-    const byte = Math.max(0, Math.min(255, plane[i]));
+  for (let i = 0; i < image.length; i++) {
+    const byte = Math.max(0, Math.min(255, image[i]));
     rgba[4 * i] = rgba[4 * i + 1] = rgba[4 * i + 2] = byte;
     rgba[4 * i + 3] = 255;
   }
@@ -94,7 +94,28 @@ export function carveImage(
     return rgba.buffer;
   }
 
-  const arrays = allocateCarvingArrays(width, height, carvedWidth, carvedHeight);
+  const verticalSeams = Math.abs(width - carvedWidth);
+  const horizontalSeams = Math.abs(height - carvedHeight);
+
+  const maxImageSize = Math.max(width, carvedWidth) * Math.max(height, carvedHeight);
+
+  const arrays = (() => {
+    const maxIntensEdgesSize = Math.max(width, carvedWidth) * height;
+
+    const maxSeamsSize = Math.max(verticalSeams * height, horizontalSeams * carvedWidth);
+
+    const [
+      [scratch32],
+      [seams, edges],
+      [intens]
+    ] = allocateArrays(
+      [maxImageSize],
+      [maxSeamsSize, maxIntensEdgesSize],
+      [maxIntensEdgesSize],
+    );
+
+    return { scratch32, seams, edges, intens };
+  })();
 
   const scratch8 = new Uint8Array(
     arrays.scratch32.buffer,
@@ -130,31 +151,45 @@ export function carveImage(
     let w = 0;
 
     for (let y = 0; y < height; y++) {
+      const row = y * width;
+
       const xs = arrays.seams.subarray(count * y, count * (y + 1));
       xs.sort();
 
-      let j = 0;
+      let prev = 0;
 
-      for (let x = 0; x < width; x++) {
-        if (j < count && x === xs[j]) {
-          if (!remove) {
-            const xl = Math.max(0, x - 1);
-            const xr = Math.min(width - 1, x + 1);
-            arrays.scratch32[w++] = rgbaAverage(image[y * width + xl], image[y * width + x]);
-            arrays.scratch32[w++] = rgbaAverage(image[y * width + x], image[y * width + x]);
-          } 
-          j++;
-          continue;
+      const copySegment = (begin: number, end: number) => {
+        if (remove) {
+          image.copyWithin(w, row + begin, row + end);
+        } else {
+          arrays.scratch32.set(image.subarray(row + begin, row + end), w);
         }
-        arrays.scratch32[w++] = image[y * width + x];
-      }
+        w += end - begin;
+      };
+
+      xs.forEach(x => {
+        copySegment(prev, x);
+
+        if (!remove) {
+          const xl = Math.max(0, x - 1);
+          const xr = Math.min(width - 1, x + 1);
+          arrays.scratch32[w++] = rgbaAverage(image[row + xl], image[row + x]);
+          arrays.scratch32[w++] = rgbaAverage(image[row + x], image[row + xr]);
+        }
+
+        prev = x + 1;
+      });
+
+      copySegment(prev, width);
     }
 
-    image.set(arrays.scratch32.subarray(0, w));
+    if (!remove) {
+      image.set(arrays.scratch32.subarray(0, w));
+    }
   };
 
   if (width !== carvedWidth) {
-    carve(width, height, Math.abs(width - carvedWidth), carvedWidth < width);
+    carve(width, height, verticalSeams, carvedWidth < width);
   }
 
   if (height !== carvedHeight) {
@@ -164,11 +199,12 @@ export function carveImage(
       transpose(arrays.intens, carvedWidth, height, scratch8);
       transpose(arrays.edges, carvedWidth, height, scratch16);
     } else {
-      computeIntensityToArray(arrays.intens, new Uint8Array(image.buffer, image.byteOffset, 4 * height * carvedWidth), height, carvedWidth);
+      const imageRgba = new Uint8Array(image.buffer, image.byteOffset, 4 * height * carvedWidth);
+      computeIntensityToArray(arrays.intens, imageRgba, height, carvedWidth);
       detectEdgesToArray(arrays.edges, arrays.intens, height, carvedWidth);
     }
 
-    carve(height, carvedWidth, Math.abs(height - carvedHeight), carvedHeight < height);
+    carve(height, carvedWidth, horizontalSeams, carvedHeight < height);
 
     transpose(image, carvedHeight, carvedWidth, arrays.scratch32);
   }
@@ -182,18 +218,33 @@ export function highlightSeams(
   edges: Uint16Array,
   width: number,
   height: number,
-  axis: "horizontal" | "vertical",
+  axis: "vertical" | "horizontal",
   count: number,
 ): ArrayBuffer {
   if (count === 0) {
     return rgba.buffer;
   }
 
-  const carvedWidth = (axis === "vertical") ? (width - count) : width;
-  const carvedHeight = (axis === "horizontal") ? (height - count) : height;
+  const imageSize = width * height;
 
-  const arrays = allocateCarvingArrays(width, height, carvedWidth, carvedHeight);
+  const arrays = (() => {
+    const seamLength = (axis === "horizontal") ? width : height;
+
+    const [
+      [scratch32],
+      [seams, edges],
+      [intens],
+    ] = allocateArrays(
+      [imageSize],
+      [seamLength * count, imageSize],
+      [imageSize],
+    );
+
+    return { seams, intens, edges, scratch32 };
+  })();
+
   const image = new Uint32Array(width * height);
+  const imageRgba = new Uint8Array(image.buffer);
 
   const highlight = (width: number, height: number) => {
     findAndRemoveVerticalSeams(
@@ -211,63 +262,64 @@ export function highlightSeams(
 
       for (let y = 0; y < height; y++) {
         const x = seam[y];
-        image[y * width + x] = 0xffffffff;
+        imageRgba.set([0xff, 0x00, 0xff, 0xff], 4 * (y * width + x));
       }
     }
   };
 
   const original = new Uint32Array(rgba.buffer, rgba.byteOffset, width * height);
 
-  if (axis === "horizontal") {
+  if (axis === "vertical") {
+    arrays.intens.set(intens);
+    arrays.edges.set(edges);
+    image.set(original);
+    highlight(width, height);
+  } else {
     transposeToArray(arrays.intens, intens, width, height);
     transposeToArray(arrays.edges, edges, width, height);
     transposeToArray(image, original, width, height);
     highlight(height, width);
     transpose(image, height, width, arrays.scratch32);
-  } else {
-    arrays.intens.set(intens);
-    arrays.edges.set(edges);
-    image.set(original);
-    highlight(width, height);
   }
 
   return image.buffer;
 }
 
-function allocateCarvingArrays(width: number, height: number, carvedWidth: number, carvedHeight: number) {
-  const maxImageSize = Math.max(width, carvedWidth) * Math.max(height, carvedHeight);
-  const maxIntermediateSize = Math.max(width, carvedWidth) * height;
-
-  const maxSeamsSize = Math.max(
-    height * Math.abs(width - carvedWidth),
-    carvedWidth * Math.abs(height - carvedHeight),
-  );
-
-  const size = 4 * maxImageSize + 3 * maxIntermediateSize + 2 * maxSeamsSize;
+function allocateArrays(
+  lengths32: Array<number>,
+  lengths16: Array<number>,
+  lengths8: Array<number>
+): [Array<Uint32Array>, Array<Uint16Array>, Array<Uint8Array>] {
+  const sum = (values: Array<number>) => values.reduce((x, y) => x + y);
+  const size = 4 * sum(lengths32) + 2 * sum(lengths16) + sum(lengths8);
 
   const buffer = new ArrayBuffer(size);
 
-  const scratch32 = new Uint32Array(buffer, 0, maxImageSize);
+  let offset = 0;
 
-  const edges = new Uint16Array(
-    buffer,
-    4 * maxImageSize,
-    maxIntermediateSize,
-  );
+  const arrays32 = lengths32.map(length => {
+    const array = new Uint32Array(buffer, offset, length);
+    offset += 4 * length;
+    return array;
+  });
 
-  const seams = new Uint16Array(
-    buffer,
-    4 * maxImageSize + 2 * maxIntermediateSize,
-    maxSeamsSize,
-  );
+  const arrays16 = lengths16.map(length => {
+    const array = new Uint16Array(buffer, offset, length);
+    offset += 2 * length;
+    return array;
+  });
 
-  const intens = new Uint8Array(
-    buffer,
-    4 * maxImageSize + 2 * (maxIntermediateSize + maxSeamsSize),
-    maxIntermediateSize,
-  );
+  const arrays8 = lengths8.map(length => {
+    const array = new Uint8Array(buffer, offset, length);
+    offset += length;
+    return array;
+  });
 
-  return { scratch32, edges, seams, intens };
+  return [
+    arrays32,
+    arrays16,
+    arrays8,
+  ];
 }
 
 function findAndRemoveVerticalSeams(
@@ -308,7 +360,7 @@ function findAndRemoveVerticalSeams(
 
   for (let i = count - 1; i >= 0; i--) {
     const seam = seams.subarray(i * height, (i + 1) * height);
-    
+
     for (let j = i - 1; j >= 0; j--) {
       const other = seams.subarray(j * height, (j + 1) * height);
 
