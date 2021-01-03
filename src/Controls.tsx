@@ -1,4 +1,4 @@
-import React, { ReactElement, ReactNode, useEffect, useState } from "react";
+import React, { ChangeEvent, ReactElement, ReactNode, useState } from "react";
 import type { Axis, CarveTransformation, HighlightTransformation } from "./ImageWorker";
 import type { Transformation } from "./useImageWorker";
 
@@ -168,31 +168,20 @@ type LabeledNumericInputProps = {
   value: number,
   min: number,
   max: number,
+  setValue: (value: number) => void,
   units: string,
   disabled: boolean,
-  onChange: (value: number) => void,
 }
 
 function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
-  const { label, value, min, max, units, disabled, onChange } = props;
+  const { label, value, min, max, units, disabled, setValue } = props;
 
-  const [stringValue, setStringValue] = useState<string | null>(null);
-
-  useEffect(() => {
-    setStringValue(null);
-  }, [value]);
-
-  useEffect(() => {
-    if (stringValue === null) {
-      return;
-    }
-
-    const value = parseInt(stringValue);
-
+  const onChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(event.target.value);
     if (!isNaN(value) && min <= value && value <= max) {
-      onChange(value);
+      setValue(value);
     }
-  }, [stringValue, max, min, onChange]);
+  };
 
   return (
     <div>
@@ -201,11 +190,12 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
         <input
           type="number"
           style={{ fontSize: 12, width: 80 }}
-          value={stringValue || value}
+          value={value}
           min={min}
           max={max}
-          onChange={event => setStringValue(event.target.value)}
-          disabled={disabled} />
+          onChange={onChange}
+          disabled={disabled}
+        />
         {" "}{units}
       </div>
       <input
@@ -214,8 +204,9 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
         value={value}
         min={min}
         max={max}
-        onChange={event => setStringValue(event.target.value)}
-        disabled={disabled} />
+        onChange={onChange}
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -269,7 +260,7 @@ function Scale({ scale, min, max, setScale, fit, setFit, disabled }: ScaleProps)
         value={Math.round(100 * scale)}
         min={Math.round(100 * min)}
         max={Math.round(100 * max)}
-        onChange={value => {
+        setValue={value => {
           if (Math.abs(value / 100 - scale) <= 1e-3) {
             return;
           }
@@ -365,7 +356,7 @@ function Carve({ imageWidth, imageHeight, transformation, setTransformation, dis
         max={2 * imageWidth}
         units="pixels"
         disabled={disabled}
-        onChange={value => {
+        setValue={value => {
           setTransformation({
             command: "carve",
             width: value,
@@ -380,7 +371,7 @@ function Carve({ imageWidth, imageHeight, transformation, setTransformation, dis
         max={2 * imageHeight}
         units="pixels"
         disabled={disabled}
-        onChange={value => {
+        setValue={value => {
           setTransformation({
             command: "carve",
             width: transformation.width,
@@ -442,7 +433,7 @@ function Highlight(props: HighlightProps): ReactElement {
         max={transformation.axis === "vertical" ? imageWidth : imageHeight}
         units="seams"
         disabled={disabled}
-        onChange={value => {
+        setValue={value => {
           setTransformation({
             command: "highlight",
             axis: transformation.axis,

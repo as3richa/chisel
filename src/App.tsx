@@ -1,9 +1,10 @@
 import React, { useMemo, ReactElement, useEffect, useState, CSSProperties, useCallback } from "react";
 import { Controls } from "./Controls";
-import { loadImage as loadImageData } from "./loadImage";
+import { loadImage } from "./loadImage";
 import { useViewportSize } from "./useViewportSize";
 import { ImageDataCanvas } from "./ImageDataCanvas";
 import { useImageWorker, Transformation } from "./useImageWorker";
+import { useImagePasteHandler, useImageDropHandler } from "./useImagePasteDropHandler";
 
 import dali from "./dali.jpg";
 
@@ -35,7 +36,7 @@ export function App(): ReactElement {
     cancelPendingTransformations
   } = useImageWorker();
 
-  const loadImage = useCallback((src: string) => {
+  const loadImageFromUrl = useCallback((src: string) => {
     cancelPendingTransformations();
     setImage(null);
     setImageLoading(true);
@@ -47,7 +48,7 @@ export function App(): ReactElement {
       height: 1,
     });
 
-    return loadImageData(src)
+    return loadImage(src)
       .then(image => {
         setTransformation({
           command: "carve",
@@ -58,10 +59,17 @@ export function App(): ReactElement {
       })
       .catch(err => { setErrorMessage(err.message || "Oops!"); })
       .finally(() => setImageLoading(false));
-      
   }, [cancelPendingTransformations]);
 
-  useEffect(() => { loadImage(dali); }, [loadImage]);
+  const loadImageFromFile = useCallback((file: File) => {
+    const url = URL.createObjectURL(file);
+    return loadImageFromUrl(url).then(() => URL.revokeObjectURL(url));
+  }, [loadImageFromUrl]);
+
+  useImagePasteHandler(loadImageFromFile);
+  useImageDropHandler(loadImageFromFile);
+
+  useEffect(() => { loadImageFromUrl(dali); }, [loadImageFromUrl]);
 
   useEffect(() => {
     if (image === null) {
@@ -116,10 +124,7 @@ export function App(): ReactElement {
         <Controls
           loading={imageLoading || transformationPending}
           errorMessage={errorMessage}
-          uploadFile={file => {
-            const url = URL.createObjectURL(file);
-            loadImage(url).then(() => URL.revokeObjectURL(url));
-          }}
+          uploadFile={loadImageFromFile}
           uploadDisabled={imageLoading}
           scale={scale}
           minScale={minScale}
