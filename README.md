@@ -1,6 +1,6 @@
 # chisel
 
-Seam carving demo in the browser. Written in TypeScript with React, with image processing done in a Web Worker.
+Seam carving demo in the browser. Written in TypeScript, with a React UI and a background Web Worker for image processing.
 
 ![Screenshot of chisel](screenshot.png)
 
