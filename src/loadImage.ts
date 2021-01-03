@@ -1,14 +1,10 @@
-const ctxError = new Error("HTMLCanvasElement#getContext(\"2d\") returned null");
-const loadError = new Error("Error loading image");
-const imageError = new Error("Invalid or empty image");
-
 let rasterizer: [HTMLCanvasElement, CanvasRenderingContext2D] | null = null;
 
-export function loadImage(src: string): Promise<ImageData> {
+export function loadImage(name: string, src: string): Promise<ImageData> {
   return new Promise((resolve, reject) => {
     function onLoad(this: HTMLImageElement) {
       if (this.width === 0 || this.height === 0) {
-        reject(imageError);
+        reject(new Error(`Error loading ${name}: invalid or empty image`));
       }
 
       if (rasterizer === null) {
@@ -16,7 +12,8 @@ export function loadImage(src: string): Promise<ImageData> {
         const ctx = canvas.getContext("2d");
 
         if (ctx === null) {
-          throw ctxError;
+          reject(new Error(`Error loading ${name}: couldn't create a 2D context`));
+          return;
         }
                 
         rasterizer = [canvas, ctx];
@@ -28,19 +25,19 @@ export function loadImage(src: string): Promise<ImageData> {
       canvas.height = this.height;
       ctx.drawImage(this, 0, 0);
 
-      const img = ctx.getImageData(0, 0, this.width, this.height);
+      const image = ctx.getImageData(0, 0, this.width, this.height);
 
       for (let i = 0; i < this.width*this.height; i++) {
-        img.data[4*i + 3] = 0xff;
+        image.data[4*i + 3] = 0xff;
       }
 
-      resolve(img);
+      resolve(image);
     }
 
     const img = document.createElement("img");
     img.addEventListener("load", onLoad);
-    img.addEventListener("error", () => {
-      reject(loadError);
+    img.addEventListener("error", error => {
+      reject(new Error(`Error loading ${name}: ${error.message || "something went wrong"}`));
     });
     img.src = src;
   });

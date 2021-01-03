@@ -36,7 +36,7 @@ export function App(): ReactElement {
     cancelPendingTransformations
   } = useImageWorker();
 
-  const loadImageFromUrl = useCallback((src: string) => {
+  const loadImageFromUrl = useCallback((name: string, src: string) => {
     cancelPendingTransformations();
     setImage(null);
     setImageLoading(true);
@@ -48,7 +48,7 @@ export function App(): ReactElement {
       height: 1,
     });
 
-    return loadImage(src)
+    return loadImage(name, src)
       .then(image => {
         setTransformation({
           command: "carve",
@@ -57,19 +57,19 @@ export function App(): ReactElement {
         });
         setImage(image);
       })
-      .catch(err => { setErrorMessage(err.message || "Oops!"); })
+      .catch(err => { setErrorMessage(err.message || "Something went wrong"); })
       .finally(() => setImageLoading(false));
   }, [cancelPendingTransformations]);
 
   const loadImageFromFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
-    return loadImageFromUrl(url).then(() => URL.revokeObjectURL(url));
+    return loadImageFromUrl(file.name, url).then(() => URL.revokeObjectURL(url));
   }, [loadImageFromUrl]);
 
   useImagePasteHandler(loadImageFromFile);
   useImageDropHandler(loadImageFromFile);
 
-  useEffect(() => { loadImageFromUrl(dali); }, [loadImageFromUrl]);
+  useEffect(() => { loadImageFromUrl("dali.jpg", dali); }, [loadImageFromUrl]);
 
   useEffect(() => {
     if (image === null) {

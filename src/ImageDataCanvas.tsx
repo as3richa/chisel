@@ -9,7 +9,7 @@ export function ImageDataCanvas({data, style}: ImageDataCanvasProps): ReactEleme
   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
 
   const setCanvas = useCallback(canvas => {
-    setCtx(canvas && canvas.getContext("2d"));
+    setCtx(canvas?.getContext("2d"));
   }, []);
 
   useEffect(() => {

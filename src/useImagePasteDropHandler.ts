@@ -8,7 +8,6 @@ function getImageFile(transfer: DataTransfer): File | null {
     }
   }
   return null;
-
 }
 
 export function useImageDropHandler(onImageDrop: (file: File) => void): void {

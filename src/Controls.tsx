@@ -200,7 +200,7 @@ function LabeledNumericInput(props: LabeledNumericInputProps): ReactElement {
       </div>
       <input
         type="range"
-        style={{ margin: "0 0 8px 0", display: "block" }}
+        style={{ marginBottom: 8, display: "block" }}
         value={value}
         min={min}
         max={max}
@@ -223,7 +223,7 @@ function UploadInput({ uploadFile, disabled }: UploadInputProps): ReactElement {
       cursor: disabled ? "default" : "pointer",
       color: disabled ? "darkgray" : "inherit",
       textDecoration: "underline",
-      marginBottom: 12,
+      marginBottom: 8,
     }}>
       <input
         type="file"

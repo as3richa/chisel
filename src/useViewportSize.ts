@@ -23,7 +23,9 @@ export function useViewportSize(): ViewportSize {
 
     window.addEventListener("resize", onResize);
 
-    return () => { window.removeEventListener("resize", onResize); };
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
   }, [html]);
 
   return viewportSize;

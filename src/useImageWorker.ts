@@ -7,13 +7,13 @@ export type Transformation =
   { command: "original" };
 
 export type Api = {
-  transformImage: (image: ImageData, trans: Transformation) => Promise<ImageData | null>,
+  transformImage: (image: ImageData, transformation: Transformation) => Promise<ImageData | null>,
   transformationPending: boolean,
   cancelPendingTransformations: () => void,
 };
 
 type Resolve = (transformed: ImageData | null) => void;
-type QueuedRequest = { image: ImageData, trans: Transformation, resolve: Resolve };
+type QueuedRequest = { image: ImageData, transformation: Transformation, resolve: Resolve };
 
 export function useImageWorker(): Api {
   const [pending, setPending] = useState<Resolve | null>(null);
@@ -41,10 +41,10 @@ export function useImageWorker(): Api {
 
   useEffect(() => {
     if (pending === null && queued !== null) {
-      const { image, trans, resolve } = queued;
+      const { image, transformation, resolve } = queued;
       setQueued(null);
 
-      if (trans.command === "original") {
+      if (transformation.command === "original") {
         resolve(image);
         return;
       }
@@ -54,7 +54,7 @@ export function useImageWorker(): Api {
 
       const request: Request = {
         image: { rgba, width, height },
-        trans,
+        transformation: transformation,
       };
 
       worker.postMessage(request);
@@ -62,7 +62,7 @@ export function useImageWorker(): Api {
     }
   }, [pending, queued, worker]);
 
-  const transformImage = useCallback((image: ImageData, trans: Transformation) => {
+  const transformImage = useCallback((image: ImageData, transformation: Transformation) => {
     return new Promise<ImageData | null>(resolve => {
       setQueued(queued => {
         if (queued !== null) {
@@ -71,7 +71,7 @@ export function useImageWorker(): Api {
 
         return {
           image,
-          trans,
+          transformation,
           resolve,
         };
       });

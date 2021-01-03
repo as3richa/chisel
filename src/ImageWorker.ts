@@ -44,7 +44,7 @@ export type TransferableImageData = {
 
 export type Request = {
   image: TransferableImageData,
-  trans: Transformation,
+  transformation: Transformation,
 };
 
 export type Response = TransferableImageData;
@@ -63,11 +63,11 @@ ctx.addEventListener("message", event => {
   const { rgba, width, height } = message.image;
 
   const startedAt = performance.now();
-  let memo = `${message.trans.command} ${width}x${height}`;
+  let memo = `${message.transformation.command} ${width}x${height}`;
 
-  switch (message.trans.command) {
+  switch (message.transformation.command) {
   case "carve": {
-    const { width: carvedWidth, height: carvedHeight } = message.trans;
+    const { width: carvedWidth, height: carvedHeight } = message.transformation;
     memo += ` -> ${carvedWidth}x${carvedHeight}`;
     const carved = carveImage(
       rgba,
@@ -81,7 +81,7 @@ ctx.addEventListener("message", event => {
   }
 
   case "highlight": {
-    const { axis, count } = message.trans;
+    const { axis, count } = message.transformation;
     memo += ` ${count} ${axis}`;
     const highlighted = highlightSeams(
       rgba,
@@ -95,7 +95,7 @@ ctx.addEventListener("message", event => {
   }
 
   case "gradient": {
-    const { axis } = message.trans;
+    const { axis } = message.transformation;
     memo += ` ${axis}`;
     const intens = intensityMap(rgba, width, height);
     const grad = (axis === "vertical")
